@@ -1,0 +1,1134 @@
+From 8358248e2d4a082dee423e6b238b1c813d0d1ed1 Mon Sep 17 00:00:00 2001
+From: Alan Marchesan <justcavalli@gmail.com>
+Date: Thu, 3 Oct 2013 06:45:08 +0200
+Subject: [PATCH] gs702a: initial merge of Actions code by ChristianTroy
+
+---
+ audio/Android.mk                 |  23 ++
+ audio/AudioHardware.cpp          | 744 +++++++++++++++++++++++++++++++++++++++
+ audio/AudioHardware.h            | 188 ++++++++++
+ audio/AudioPolicyManagerBase.cpp |  24 +-
+ audio/audio_policy.conf          |  36 +-
+ wifi/Android.mk                  |   8 +-
+ 6 files changed, 1010 insertions(+), 13 deletions(-)
+ create mode 100755 audio/AudioHardware.cpp
+ create mode 100644 audio/AudioHardware.h
+
+diff --git a/audio/Android.mk b/audio/Android.mk
+index a69b9cd..f950be9 100644
+--- a/audio/Android.mk
++++ b/audio/Android.mk
+@@ -56,6 +56,29 @@ LOCAL_MODULE_TAGS := optional
+ 
+ include $(BUILD_SHARED_LIBRARY)
+ 
++###########################use Actions HAL####################
++# The default audio hw hal
++include $(CLEAR_VARS)
++
++LOCAL_SRC_FILES := \
++    AudioHardware.cpp
++
++LOCAL_SHARED_LIBRARIES := \
++    libcutils \
++    libutils
++
++LOCAL_STATIC_LIBRARIES := \
++    libmedia_helper
++
++LOCAL_WHOLE_STATIC_LIBRARIES := \
++    libaudiohw_legacy
++
++LOCAL_MODULE := audio.primary.$(TARGET_BOARD_PLATFORM)
++LOCAL_MODULE_PATH := $(TARGET_OUT_SHARED_LIBRARIES)/hw
++LOCAL_MODULE_TAGS := optional
++
++include $(BUILD_SHARED_LIBRARY)
++###########################use Actions HAL####################
+ #ifeq ($(ENABLE_AUDIO_DUMP),true)
+ #  LOCAL_SRC_FILES += AudioDumpInterface.cpp
+ #  LOCAL_CFLAGS += -DENABLE_AUDIO_DUMP
+diff --git a/audio/AudioHardware.cpp b/audio/AudioHardware.cpp
+new file mode 100755
+index 0000000..415d2f3
+--- /dev/null
++++ b/audio/AudioHardware.cpp
+@@ -0,0 +1,744 @@
++/*
++ **
++ ** Copyright 2007, The Android Open Source Project
++ **
++ ** Licensed under the Apache License, Version 2.0 (the "License");
++ ** you may not use this file except in compliance with the License.
++ ** You may obtain a copy of the License at
++ **
++ **     http://www.apache.org/licenses/LICENSE-2.0
++ **
++ ** Unless required by applicable law or agreed to in writing, software
++ ** distributed under the License is distributed on an "AS IS" BASIS,
++ ** WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++ ** See the License for the specific language governing permissions and
++ ** limitations under the License.
++ */
++
++//#define LOG_NDEBUG 0
++#define LOG_TAG "AudioHardware"
++#include <utils/Log.h>
++
++#include <stdint.h>
++#include <sys/types.h>
++
++#include <stdlib.h>
++#include <stdio.h>
++#include <unistd.h>
++#include <sched.h>
++#include <fcntl.h>
++#include <sys/ioctl.h>
++#include <utils/String8.h>
++#include <cutils/properties.h>
++
++#include "AudioHardware.h"
++#include <media/AudioRecord.h>
++
++namespace android_audio_legacy {
++
++// ----------------------------------------------------------------------------
++
++static char const * const kAudioPlaybackName = "/dev/snd/sound";
++static char const * const kAudioCaptureName = "/dev/snd/sound";
++static char const * const kAudioControlName = "/dev/snd/sound";
++
++//#define _DEBUG_DAC_
++//#define _DEBUG_ADC_
++
++#ifdef _DEBUG_DAC_
++FILE *dac_fp = NULL;
++#endif
++
++#ifdef _DEBUG_ADC_
++FILE *adc_fp = NULL;
++#endif
++
++// ----------------------------------------------------------------------------
++
++AudioHardware::AudioHardware() :
++	mOutput(0), mInput(0), mMicMute(false), mFd(-1) {
++}
++
++AudioHardware::~AudioHardware() {
++	if (mFd > 0) {
++		::close(mFd);
++		mFd = -1;
++	}
++
++	closeOutputStream((AudioStreamOut *) mOutput);
++	closeInputStream((AudioStreamIn *) mInput);
++}
++
++status_t AudioHardware::initCheck() {
++	return NO_ERROR;
++}
++
++AudioStreamOut* AudioHardware::openOutputStream(uint32_t devices, int *format,
++		uint32_t *channels, uint32_t *sampleRate, status_t *status) {
++	AutoMutex lock(mLock);
++
++	// only one output stream allowed
++	if (mOutput) {
++		if (status) {
++			*status = INVALID_OPERATION;
++		}
++		return 0;
++	}
++
++	// create new output stream
++	AudioStreamOutACTxx* out = new AudioStreamOutACTxx();
++	status_t lStatus = out->set(this, devices, format, channels, sampleRate);
++	if (status) {
++		*status = lStatus;
++	}
++	if (lStatus == NO_ERROR) {
++		mOutput = out;
++	} else {
++		delete out;
++	}
++
++	return mOutput;
++}
++
++void AudioHardware::closeOutputStream(AudioStreamOut* out) {
++	if (mOutput && out == mOutput) {
++		delete mOutput;
++		mOutput = 0;
++	}
++}
++
++AudioStreamIn* AudioHardware::openInputStream(uint32_t devices, int *format,
++		uint32_t *channels, uint32_t *sampleRate, status_t *status,
++		AudioSystem::audio_in_acoustics acoustics) {
++	// check for valid input source
++	if (!AudioSystem::isInputDevice((AudioSystem::audio_devices) devices)) {
++		return 0;
++	}
++
++	AutoMutex lock(mLock);
++
++	// support more than one input stream
++	if (mInput) {
++		ALOGD("more than one input");
++//		//only one output stream allowed
++//		if (status) {
++//			*status = INVALID_OPERATION;
++//		}
++//		return 0;
++	}
++
++	// create new output stream
++	AudioStreamInACTxx* in = new AudioStreamInACTxx();
++	status_t lStatus = in->set(this, devices, format, channels, sampleRate,
++			acoustics);
++	if (status) {
++		*status = lStatus;
++	}
++	if (lStatus == NO_ERROR) {
++		mInput = in;
++	} else {
++		delete in;
++	}
++	return mInput;
++}
++
++void AudioHardware::closeInputStream(AudioStreamIn* in) {
++	if (mInput && in == mInput) {
++		delete mInput;
++		mInput = 0;
++		in = 0;
++	}
++	
++	//support more input stream
++	if (in) {
++		ALOGD("mInput != in");
++		delete in;
++		in = 0;
++	}
++}
++
++status_t AudioHardware::setVoiceVolume(float v) {
++	ALOGV("Not support setVoiceVolume, it is for telephone!");
++	return NO_ERROR;
++}
++
++status_t AudioHardware::setMasterVolume(float v) {
++	// Implement: set master volume
++	if (v < 0.0) {
++		v = 0.0;
++	} else if (v > 1.0) {
++		v = 1.0;
++	}
++
++	int vol = int(v * 40);
++	if (getFd() > 0) {
++		ioctl(mFd, SOUND_MIXER_WRITE_VOLUME, &vol);
++		::close(mFd);
++		mFd = -1;
++	}
++
++	return NO_ERROR;
++}
++
++status_t AudioHardware::setMicMute(bool state) {
++	int micFlag = 0;
++	micFlag = (int) state;
++	if (getFd() > 0) {
++		ioctl(mFd, SOUND_MIXER_WRITE_MIC, &micFlag);
++		::close(mFd);
++		mFd = -1;
++	}
++
++	mMicMute = state;
++	return NO_ERROR;
++}
++
++status_t AudioHardware::getMicMute(bool* state) {	
++	*state = mMicMute;
++	return NO_ERROR;
++}
++
++size_t AudioHardware::getInputBufferSize(uint32_t sampleRate, int format,
++		int channelCount) {
++	if (format != AudioSystem::PCM_16_BIT) {
++		ALOGW("getInputBufferSize bad format: %d", format);
++		return 0;
++	}
++	if (channelCount < 1 || channelCount > 2) {
++		ALOGW("getInputBufferSize bad channel count: %d", channelCount);
++		return 0;
++	}
++	ALOGD("AudioHardware::getInputBufferSize %d ",2048 * channelCount);
++
++	return 2048 * channelCount;
++}
++
++int32_t AudioHardware::getFd() {
++	if (mFd > 0) {
++		return mFd;
++	}
++
++	mFd = ::open(kAudioControlName, O_RDONLY);
++	if (mFd > 0) {
++		ALOGI("open control drv");
++		return mFd;
++	}
++
++	ALOGE("Cannot open %s read errno: %d", kAudioControlName, errno);
++	return -1;
++}
++
++status_t AudioHardware::dumpInternals(int fd, const Vector<String16>& args) {
++	const size_t SIZE = 256;
++	char buffer[SIZE];
++	String8 result;
++	result.append("AudioHardware::dumpInternals\n");
++	snprintf(buffer, SIZE, "\tmMicMute: %s\n", mMicMute ? "true" : "false");
++	result.append(buffer);
++	::write(fd, result.string(), result.size());
++	return NO_ERROR;
++}
++
++status_t AudioHardware::dump(int fd, const Vector<String16>& args) {
++	dumpInternals(fd, args);
++	if (mInput) {
++		mInput->dump(fd, args);
++	}
++	if (mOutput) {
++		mOutput->dump(fd, args);
++	}
++	return NO_ERROR;
++}
++
++// ----------------------------------------------------------------------------
++AudioStreamOutACTxx::AudioStreamOutACTxx() :
++	mHardware(0), mFd(-1), mChannels(AudioSystem::CHANNEL_OUT_STEREO),
++			mDevice(0), mStandby(true), mOutMode(O_MODE_I2S_2), mSpeakerOn(0) {
++	/* fragsize = (1 << 11) = 2048, fragnum = 3, about 50ms per dma transfer */
++	mFragShift = 11;
++	mFragNum = 5;
++}
++
++status_t AudioStreamOutACTxx::set(AudioHardware *hw, uint32_t devices,
++		int *pFormat, uint32_t *pChannels, uint32_t *pRate) {
++	int lFormat = pFormat ? *pFormat : 0;
++	uint32_t lChannels = pChannels ? *pChannels : 0;
++	uint32_t lRate = pRate ? *pRate : 0;
++
++	// fix up defaults
++	if (lFormat == 0)
++		lFormat = format();
++	if (lChannels == 0)
++		lChannels = channels();
++	if (lRate == 0)
++		lRate = sampleRate();
++
++	// check values
++	if ((lFormat != format()) || (lChannels != channels()) || (lRate
++			!= sampleRate())) {
++		if (pFormat)
++			*pFormat = format();
++		if (pChannels)
++			*pChannels = channels();
++		if (pRate)
++			*pRate = sampleRate();
++		return BAD_VALUE;
++	}
++
++	if (pFormat)
++		*pFormat = lFormat;
++	if (pChannels)
++		*pChannels = lChannels;
++	if (pRate)
++		*pRate = lRate;
++
++	mHardware = hw;
++	mDevice = devices;
++	return NO_ERROR;
++}
++
++AudioStreamOutACTxx::~AudioStreamOutACTxx() {
++	
++#ifdef _DEBUG_DAC_
++    if (dac_fp != NULL) {
++    	ALOGD("dac_fp != NULL");
++        fclose(dac_fp);
++        dac_fp = NULL;
++    }
++#endif
++
++	standby();
++}
++
++#if 0
++uint32_t AudioStreamOutACTxx::latency() {
++	uint32_t mLatency = 0;
++	if (mFd > 0) {
++		ioctl(mFd, SNDRV_GINUSE, &mLatency);
++		mLatency = mLatency * 1000 / 44100;
++	} else {
++		mLatency = 30;
++	}
++	return mLatency;
++}
++#endif
++
++status_t AudioStreamOutACTxx::setVolume(float l, float r) {
++	status_t status = NO_INIT;
++	if (l != r)
++		return INVALID_OPERATION;
++	if (l < 0.0) {
++		l = 0.0;
++	} else if (l > 1.0) {
++		l = 1.0;
++	}
++
++	int vol = int(l * 40);
++	vol = 40;
++	if (getFd() > 0) {
++		ioctl(mFd, SOUND_MIXER_WRITE_VOLUME, &vol);
++	}
++
++	return NO_ERROR;
++}
++
++ssize_t AudioStreamOutACTxx::write(const void* buffer, size_t bytes) {
++	Mutex::Autolock _l(mLock);
++	status_t status = NO_INIT;
++	const uint8_t* p = static_cast<const uint8_t*> (buffer);
++
++	if (mStandby) {
++		mEnable = false;
++		if (getFd() > 0) {
++        	char value[PROPERTY_VALUE_MAX];
++        	/*
++        	 * if .bypass enable, need to decide whether .playback is enable or not
++        	 * otherwise, always enable playback
++        	 * */
++        	property_get("ro.actions.audio.bypass", value, "disable");
++        	if (strncmp(value, "enable", 6) == 0) {
++        		property_get("hw.actions.audio.playback", value, "disable");
++        	} else {
++        		strcpy(value, "enable");        		
++        	}
++
++			if (strncmp(value, "enable", 6) == 0) {
++				int args = 0;
++				args = (mFragNum << 16) | mFragShift;
++				ioctl(mFd, SNDCTL_DSP_SETFRAGMENT, &args);
++				args = sampleRate();
++				ioctl(mFd, SNDCTL_DSP_SPEED, &args);
++				args = AudioSystem::popCount(mChannels);
++				ioctl(mFd, SNDCTL_DSP_CHANNELS, &args);
++				
++				ioctl(mFd, SNDRV_SSPEAKER, &mSpeakerOn);
++    			ioctl(mFd, SNDRV_SOUTMODE, &mOutMode);
++
++				mEnable = true;
++			}
++		}
++		mStandby = false;		
++	}
++
++	if (mEnable) {
++
++#ifdef _DEBUG_DAC_
++        if (dac_fp != NULL) {
++            fwrite(p, 1, bytes, dac_fp);
++//            ALOGD("dac w %d", bytes);
++        }
++#endif
++		if ((bytes & 0x1f) != 0) {
++			ALOGE("write bytes should be burst 8, bytes:%d ", bytes);
++		}
++		return ssize_t(::write(mFd, p, bytes));
++	} else {
++		// Simulate audio output timing in case of error
++		usleep(bytes * 1000000 / frameSize() / sampleRate());
++		return bytes;
++	}
++}
++
++status_t AudioStreamOutACTxx::standby() {
++	if (!mStandby && mFd > 0) {
++		::close(mFd);
++		mFd = -1;
++	}
++
++	mStandby = true;
++
++	return NO_ERROR;
++}
++
++int32_t AudioStreamOutACTxx::getFd() {
++	if (mFd > 0) {
++		return mFd;
++	}
++	
++#ifdef _DEBUG_DAC_
++    if (dac_fp != NULL) {
++        fclose(dac_fp);
++        dac_fp = NULL;
++    }
++    dac_fp = fopen("/data/czx/dac_tmp.pcm", "wb");
++    if (dac_fp == NULL) {
++    	ALOGE("/data creat dac_tmp file failed! errno:%d, str:%s", errno, strerror(errno));
++    } else {
++    	ALOGD("/data open dac_tmp.pcm.");
++    }
++#endif
++
++	mFd = ::open(kAudioPlaybackName, O_RDWR);
++	if (mFd > 0) {
++		ALOGI("open playback drv");
++		return mFd;
++	}
++
++	ALOGE("Cannot open %s write, errno: %d", kAudioPlaybackName, errno);
++
++	return -1;
++}
++
++status_t AudioStreamOutACTxx::dump(int fd, const Vector<String16>& args) {
++	const size_t SIZE = 256;
++	char buffer[SIZE];
++	String8 result;
++	snprintf(buffer, SIZE, "AudioStreamOutACTxx::dump\n");
++	result.append(buffer);
++	snprintf(buffer, SIZE, "\tsample rate: %d\n", sampleRate());
++	result.append(buffer);
++	snprintf(buffer, SIZE, "\tbuffer size: %d\n", bufferSize());
++	result.append(buffer);
++	snprintf(buffer, SIZE, "\tchannels: %d\n", channels());
++	result.append(buffer);
++	snprintf(buffer, SIZE, "\tformat: %d\n", format());
++	result.append(buffer);
++	snprintf(buffer, SIZE, "\tdevice: %d\n", mDevice);
++	result.append(buffer);
++	snprintf(buffer, SIZE, "\tmAudioHardware: %p\n", mHardware);
++	result.append(buffer);
++	snprintf(buffer, SIZE, "\tmFd: %d\n", mFd);
++	result.append(buffer);
++	::write(fd, result.string(), result.size());
++	return NO_ERROR;
++}
++
++status_t AudioStreamOutACTxx::setParameters(const String8& keyValuePairs) {
++	AudioParameter param = AudioParameter(keyValuePairs);
++	String8 key = String8(AudioParameter::keyRouting);
++	status_t status = NO_ERROR;
++	int device;
++	ALOGV("setParameters() %s", keyValuePairs.string());
++
++	if (param.getInt(key, device) == NO_ERROR) {
++		mDevice = device;
++
++		ALOGI("set output routing %x, mSpeakerOn:%d, mStandby:%s",
++			mDevice, mSpeakerOn, (mStandby == true) ? "true" : "false");
++
++		// FIXME setForceUse: speaker may not effective when headphone is on.
++		if ((device & AudioSystem::DEVICE_OUT_AUX_DIGITAL) == AudioSystem::DEVICE_OUT_AUX_DIGITAL) {
++			mOutMode = O_MODE_HDMI;
++			mSpeakerOn = 0;
++		} else if (((device & AudioSystem::DEVICE_OUT_SPEAKER) == AudioSystem::DEVICE_OUT_SPEAKER) && 
++			((device & AudioSystem::DEVICE_OUT_WIRED_HEADPHONE) != AudioSystem::DEVICE_OUT_WIRED_HEADPHONE) && 
++			(!mStandby)) {
++			/* speaker off when mStandby is true */
++			mOutMode = O_MODE_I2S_2;
++			mSpeakerOn = 1;
++		} else {
++			mOutMode = O_MODE_I2S_2;
++			mSpeakerOn = 0;
++		}
++
++		if (getFd() > 0) {
++			ioctl(mFd, SNDRV_SSPEAKER, &mSpeakerOn);
++			ioctl(mFd, SNDRV_SOUTMODE, &mOutMode);
++		}
++
++		param.remove(key);
++	}
++
++	if (param.size()) {
++		status = BAD_VALUE;
++	}
++	return status;
++}
++
++String8 AudioStreamOutACTxx::getParameters(const String8& keys) {
++	AudioParameter param = AudioParameter(keys);
++	String8 value;
++	String8 key = String8(AudioParameter::keyRouting);
++
++	if (param.get(key, value) == NO_ERROR) {
++		param.addInt(key, (int) mDevice);
++	}
++
++	ALOGV("getParameters() %s", param.toString().string());
++	return param.toString();
++}
++
++status_t AudioStreamOutACTxx::getRenderPosition(uint32_t *dspFrames) {
++	return INVALID_OPERATION;
++}
++
++// ----------------------------------------------------------------------------
++AudioStreamInACTxx::AudioStreamInACTxx() :
++	mHardware(0), mFd(-1), mDevice(0), mStandby(true) {
++	/* fragsize = (1 << 11) = 2048, fragnum = 3, about 50ms per dma transfer */
++	mFragShift = 11;
++	mFragNum = 3;
++	
++#ifdef _DEBUG_ADC_
++    if (adc_fp != NULL) {
++        fclose(adc_fp);
++        adc_fp = NULL;
++    }
++    adc_fp = fopen("/data/czx/adc_tmp.pcm", "wb");
++    if (adc_fp == NULL) {
++       ALOGE("creat adc_tmp file failed!");
++    } else {
++    	ALOGD("open adc_tmp.pcm.");
++    }
++#endif
++	
++}
++
++// record functions
++status_t AudioStreamInACTxx::set(AudioHardware *hw, uint32_t devices,
++		int *pFormat, uint32_t *pChannels, uint32_t *pRate,
++		AudioSystem::audio_in_acoustics acoustics) {
++	if (pFormat == 0 || pChannels == 0 || pRate == 0)
++		return BAD_VALUE;
++	
++	mChannels = AudioSystem::popCount(*pChannels);
++	mBufferSize = 2048 * mChannels;
++	if(*pRate != sampleRate()) {
++		//*pRate = sampleRate();
++	}
++	ALOGD("AudioStreamInACTxx::set(%p, %d, %d, %u)", hw, *pFormat, *pChannels, *pRate);
++	// check values
++	//    if ((*pFormat != format()) ||
++	//        (*pChannels != channels()) ||
++	//        (*pRate != sampleRate())) {
++	//        ALOGE("Error opening input channel");
++	//        *pFormat = format();
++	//        *pChannels = channels();
++	//        *pRate = sampleRate();
++	//        return BAD_VALUE;
++	//    }
++
++	mHardware = hw;
++	mDevice = devices;
++	return NO_ERROR;
++}
++
++AudioStreamInACTxx::~AudioStreamInACTxx() {
++
++#ifdef _DEBUG_ADC_
++    if (adc_fp != NULL) {
++        fclose(adc_fp);
++        adc_fp = NULL;
++    }
++#endif
++
++	standby();
++}
++
++status_t AudioStreamInACTxx::setGain(float g) {
++	status_t status = NO_INIT;
++	if (g < 0.0) {
++		g = 0.0;
++	} else if (g > 1.0) {
++		g = 1.0;
++	}
++
++	int gain = int(g * 25);
++	if (getFd() > 0) {
++		ioctl(mFd, SOUND_MIXER_WRITE_IGAIN, &gain);
++	}
++
++	return NO_ERROR;
++}
++
++ssize_t AudioStreamInACTxx::read(void* buffer, ssize_t bytes) {
++	AutoMutex lock(mLock);
++	status_t status = NO_INIT;
++	uint8_t* p = static_cast<uint8_t*> (buffer);
++
++	if (mStandby) {
++		mEnable = false;
++		if (getFd() > 0) {
++        	char value[PROPERTY_VALUE_MAX];
++        	property_get("hw.actions.audio.capture", value, "enable");
++        	if (strncmp(value, "enable", 6) == 0) {
++    			int args = 0;
++    			args = (mFragNum << 16) | mFragShift;
++    			ioctl(mFd, SNDCTL_DSP_SETFRAGMENT, &args);
++    			args = sampleRate();
++    			ioctl(mFd, SNDCTL_DSP_SPEED, &args);
++    			args = AudioSystem::popCount(mChannels);
++    			ioctl(mFd, SNDCTL_DSP_CHANNELS, &args);
++    
++    			mEnable = true;
++    		}
++   		}
++		
++		mStandby = false;
++	}
++	
++	if (mEnable) {
++
++		ssize_t len = ::read(mFd, p, bytes);
++	
++#ifdef _DEBUG_ADC_
++        if (adc_fp != NULL) {
++            fwrite(p, 1, bytes, adc_fp);
++            //ALOGD("adc w %d", bytes);
++        } else {
++        	adc_fp = fopen("/data/czx/adc_tmp.pcm", "wb");
++			    if (adc_fp == NULL) {
++			    	ALOGE("creat adc_tmp file failed!");
++			    } else {
++			    	ALOGD("open adc_tmp.pcm.");
++			    }
++        }
++#endif
++
++		return len;
++	} else {
++		// Simulate audio input timing in case of error
++		memset(p, 0, bytes);
++		usleep(bytes * 1000000 / frameSize() / sampleRate());
++		return bytes;
++	}
++}
++
++status_t AudioStreamInACTxx::standby() {
++	if (!mStandby && mFd > 0) {
++		::close(mFd);
++		mFd = -1;
++	}
++
++	mStandby = true;
++	return NO_ERROR;
++}
++
++int32_t AudioStreamInACTxx::getFd() {
++	if (mFd > 0) {
++		return mFd;
++	}
++
++	mFd = ::open(kAudioCaptureName, O_RDONLY);
++	if (mFd > 0) {
++		ALOGI("open capture drv");
++		return mFd;
++	}
++
++	ALOGE("Cannot open %s read errno: %d", kAudioCaptureName, errno);
++
++	return -1;
++}
++
++status_t AudioStreamInACTxx::dump(int fd, const Vector<String16>& args) {
++	const size_t SIZE = 256;
++	char buffer[SIZE];
++	String8 result;
++	snprintf(buffer, SIZE, "AudioStreamInACTxx::dump\n");
++	result.append(buffer);
++	snprintf(buffer, SIZE, "\tsample rate: %d\n", sampleRate());
++	result.append(buffer);
++	snprintf(buffer, SIZE, "\tbuffer size: %d\n", bufferSize());
++	result.append(buffer);
++	snprintf(buffer, SIZE, "\tchannels: %d\n", channels());
++	result.append(buffer);
++	snprintf(buffer, SIZE, "\tformat: %d\n", format());
++	result.append(buffer);
++	snprintf(buffer, SIZE, "\tdevice: %d\n", mDevice);
++	result.append(buffer);
++	snprintf(buffer, SIZE, "\tmHardware: %p\n", mHardware);
++	result.append(buffer);
++	snprintf(buffer, SIZE, "\tmFd: %d\n", mFd);
++	result.append(buffer);
++	::write(fd, result.string(), result.size());
++	return NO_ERROR;
++}
++
++status_t AudioStreamInACTxx::setParameters(const String8& keyValuePairs) {
++	AudioParameter param = AudioParameter(keyValuePairs);
++	String8 key = String8(AudioParameter::keyRouting);
++	status_t status = NO_ERROR;
++	int device;
++	ALOGV("setParameters() %s", keyValuePairs.string());
++
++	if (param.getInt(key, device) == NO_ERROR) {
++		mDevice = device;
++		ALOGV("set output routing %x", mDevice);
++		param.remove(key);
++	}
++
++	if (param.size()) {
++		status = BAD_VALUE;
++	}
++	return status;
++}
++
++String8 AudioStreamInACTxx::getParameters(const String8& keys) {
++	AudioParameter param = AudioParameter(keys);
++	String8 value;
++	String8 key = String8(AudioParameter::keyRouting);
++
++	if (param.get(key, value) == NO_ERROR) {
++		param.addInt(key, (int) mDevice);
++	}
++
++	ALOGV("getParameters() %s", param.toString().string());
++	return param.toString();
++}
++
++// ----------------------------------------------------------------------------
++extern "C" AudioHardwareInterface* createAudioHardware(void) {
++	return new AudioHardware();
++}
++
++}; // namespace android
+diff --git a/audio/AudioHardware.h b/audio/AudioHardware.h
+new file mode 100644
+index 0000000..c390917
+--- /dev/null
++++ b/audio/AudioHardware.h
+@@ -0,0 +1,188 @@
++/*
++** Copyright 2008, The Android Open-Source Project
++**
++** Licensed under the Apache License, Version 2.0 (the "License");
++** you may not use this file except in compliance with the License.
++** You may obtain a copy of the License at
++**
++**     http://www.apache.org/licenses/LICENSE-2.0
++**
++** Unless required by applicable law or agreed to in writing, software
++** distributed under the License is distributed on an "AS IS" BASIS,
++** WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++** See the License for the specific language governing permissions and
++** limitations under the License.
++*/
++
++#ifndef ANDROID_AUDIO_HARDWARE_H
++#define ANDROID_AUDIO_HARDWARE_H
++
++#include <stdint.h>
++#include <sys/types.h>
++
++#include <utils/threads.h>
++
++#include <hardware_legacy/AudioHardwareBase.h>
++
++#define SNDRV_SOUTMODE                  0xffff0000
++#define SNDRV_SSPEAKER					0xffff0001
++#define SNDRV_GINUSE                    0xffff0002
++
++enum
++{
++    O_MODE_I2S_2 = 0,
++    O_MODE_I2S_51_TDM_A = 1,
++    O_MODE_I2S_71_TDM_A = 3,
++    O_MODE_SPDIF,
++    O_MODE_HDMI = 5,
++    I_MODE_GENERAL,
++};
++
++extern "C" {
++#include <linux/soundcard.h>
++}
++
++namespace android_audio_legacy {
++	using android::Mutex;
++	using android::AutoMutex;
++
++class AudioHardware;
++// ----------------------------------------------------------------------------
++class AudioStreamOutACTxx : public AudioStreamOut {
++public:
++                        AudioStreamOutACTxx();
++    virtual             ~AudioStreamOutACTxx();
++
++    virtual status_t    set(
++            AudioHardware *hw,
++            uint32_t devices,
++            int *pFormat,
++            uint32_t *pChannels,
++            uint32_t *pRate);
++
++    virtual uint32_t    sampleRate() const { return 44100; }
++    virtual size_t      bufferSize() const { return 4096; }
++    virtual uint32_t    channels() const { return mChannels; }
++    virtual int         format() const { return AudioSystem::PCM_16_BIT; }
++    virtual uint32_t    latency() const { return 20; }
++    virtual status_t    setVolume(float left, float right);
++    virtual ssize_t     write(const void* buffer, size_t bytes);
++    virtual status_t    standby();
++    virtual status_t    dump(int fd, const Vector<String16>& args);
++    virtual status_t    setParameters(const String8& keyValuePairs);
++    virtual String8     getParameters(const String8& keys);
++    virtual status_t    getRenderPosition(uint32_t *dspFrames);
++    virtual status_t    getNextWriteTimestamp(int64_t *timestamp) const { return INVALID_OPERATION; }
++            int32_t     getFd();
++private:
++    AudioHardware *mHardware;
++    Mutex       mLock;
++    int         mFd;
++    uint32_t    mChannels;
++    uint32_t 	mFragShift;
++    uint32_t	mFragNum;
++    uint32_t    mDevice;
++    bool        mStandby;
++    bool 		mEnable;
++    int         mOutMode;
++    int         mSpeakerOn;
++};
++
++class AudioStreamInACTxx : public AudioStreamIn {
++public:
++                        AudioStreamInACTxx();
++    virtual             ~AudioStreamInACTxx();
++
++    virtual status_t    set(
++            AudioHardware *hw,
++            uint32_t devices,
++            int *pFormat,
++            uint32_t *pChannels,
++            uint32_t *pRate,
++            AudioSystem::audio_in_acoustics acoustics);
++
++    virtual size_t      bufferSize() const { return mBufferSize; }
++    virtual uint32_t    channels() const { return AudioSystem::CHANNEL_IN_STEREO; }
++    virtual uint32_t    sampleRate() const { return 44100; }
++    virtual int         format() const { return AudioSystem::PCM_16_BIT; }
++    virtual status_t    setGain(float gain);
++    virtual ssize_t     read(void* buffer, ssize_t bytes);
++    virtual status_t    dump(int fd, const Vector<String16>& args);
++	virtual status_t    standby();
++    virtual status_t    setParameters(const String8& keyValuePairs);
++    virtual String8     getParameters(const String8& keys);
++    virtual uint32_t    getInputFramesLost() const { return 0; }
++    virtual status_t 	addAudioEffect(effect_handle_t effect) { return NO_ERROR; }
++    virtual status_t 	removeAudioEffect(effect_handle_t effect) { return NO_ERROR; }
++			int32_t     getFd();
++private:
++    AudioHardware *mHardware;
++    Mutex       mLock;
++    int         mFd;
++    //uint32_t    mSampleRate;    
++    uint32_t    mChannels;
++    size_t      mBufferSize;
++    uint32_t 	mFragShift;
++    uint32_t	mFragNum;    
++    uint32_t 	mDevice;
++    bool        mStandby;
++    bool 		mEnable;
++};
++
++
++class AudioHardware : public  AudioHardwareBase
++{
++public:
++                        AudioHardware();
++    virtual             ~AudioHardware();
++    virtual status_t    initCheck();
++
++
++    virtual status_t    setVoiceVolume(float volume);
++    virtual status_t    setMasterVolume(float volume);
++    virtual status_t	getMasterVolume(float volume) const { return INVALID_OPERATION; }
++
++    virtual status_t   	setMode(int mode) { return NO_ERROR; }
++
++    // mic mute
++    virtual status_t    setMicMute(bool state);
++    virtual status_t    getMicMute(bool* state);
++    // create I/O streams
++    virtual AudioStreamOut* openOutputStream(
++                                uint32_t devices,
++                                int *format=0,
++                                uint32_t *channels=0,
++                                uint32_t *sampleRate=0,
++                                status_t *status=0);
++
++    virtual AudioStreamIn* openInputStream(
++                                uint32_t devices,
++                                int *format,
++                                uint32_t *channels,
++                                uint32_t *sampleRate,
++                                status_t *status,
++                                AudioSystem::audio_in_acoustics acoustics);
++
++    virtual    	void        closeOutputStream(AudioStreamOut* out);
++    virtual    	void        closeInputStream(AudioStreamIn* in);
++
++    virtual    	size_t		getInputBufferSize(uint32_t sampleRate, int format, int channelCount);
++    			int32_t    	getFd();
++protected:
++    virtual 	status_t    dump(int fd, const Vector<String16>& args);
++
++private:
++    status_t    dumpInternals(int fd, const Vector<String16>& args);
++
++    Mutex                   mLock;
++    AudioStreamOutACTxx     *mOutput;
++    AudioStreamInACTxx      *mInput;
++    bool                    mMicMute;
++    int 					mFd;
++};
++
++// ----------------------------------------------------------------------------
++
++}; // namespace android
++
++#endif // ANDROID_AUDIO_HARDWARE_H
+diff --git a/audio/AudioPolicyManagerBase.cpp b/audio/AudioPolicyManagerBase.cpp
+index 9c48d35..8de6d3d 100644
+--- a/audio/AudioPolicyManagerBase.cpp
++++ b/audio/AudioPolicyManagerBase.cpp
+@@ -2031,8 +2031,16 @@ audio_devices_t AudioPolicyManagerBase::getNewDevice(audio_io_handle_t output, b
+         device = getDeviceForStrategy(STRATEGY_MEDIA, fromCache);
+     } else if (outputDesc->isUsedByStrategy(STRATEGY_DTMF)) {
+         device = getDeviceForStrategy(STRATEGY_DTMF, fromCache);
++    } else {
++        // FIXME
++        // when plug HDMI with no sound playing, it go to this branch.
++        // if plug HDMI, without stoping music(4.1), this operation is needless.
++        // otherwise(4.2), when preDevice is HDMI, and HDMI is on, it lead actual OutputDevices to 0,
++        // doing this operation(releated to HAL) here promises the OutputDevices to hdmi.
++        device = mAvailableOutputDevices & AUDIO_DEVICE_OUT_AUX_DIGITAL;
+     }
+ 
++
+     ALOGV("getNewDevice() selected device %x", device);
+     return device;
+ }
+@@ -2256,12 +2264,6 @@ audio_devices_t AudioPolicyManagerBase::getDeviceForStrategy(routing_strategy st
+             }
+         }
+         if (device2 == AUDIO_DEVICE_NONE) {
+-            device2 = mAvailableOutputDevices & AUDIO_DEVICE_OUT_WIRED_HEADPHONE;
+-        }
+-        if (device2 == AUDIO_DEVICE_NONE) {
+-            device2 = mAvailableOutputDevices & AUDIO_DEVICE_OUT_WIRED_HEADSET;
+-        }
+-        if (device2 == AUDIO_DEVICE_NONE) {
+             device2 = mAvailableOutputDevices & AUDIO_DEVICE_OUT_USB_ACCESSORY;
+         }
+         if (device2 == AUDIO_DEVICE_NONE) {
+@@ -2270,7 +2272,7 @@ audio_devices_t AudioPolicyManagerBase::getDeviceForStrategy(routing_strategy st
+         if (device2 == AUDIO_DEVICE_NONE) {
+             device2 = mAvailableOutputDevices & AUDIO_DEVICE_OUT_DGTL_DOCK_HEADSET;
+         }
+-        if ((device2 == AUDIO_DEVICE_NONE) && (strategy != STRATEGY_SONIFICATION)) {
++        if ((device2 == AUDIO_DEVICE_NONE) /*&& (strategy != STRATEGY_SONIFICATION)*/) {
+             // no sonification on aux digital (e.g. HDMI)
+             device2 = mAvailableOutputDevices & AUDIO_DEVICE_OUT_AUX_DIGITAL;
+         }
+@@ -2279,6 +2281,12 @@ audio_devices_t AudioPolicyManagerBase::getDeviceForStrategy(routing_strategy st
+             device2 = mAvailableOutputDevices & AUDIO_DEVICE_OUT_ANLG_DOCK_HEADSET;
+         }
+         if (device2 == AUDIO_DEVICE_NONE) {
++            device2 = mAvailableOutputDevices & AUDIO_DEVICE_OUT_WIRED_HEADPHONE;
++        }
++        if (device2 == AUDIO_DEVICE_NONE) {
++            device2 = mAvailableOutputDevices & AUDIO_DEVICE_OUT_WIRED_HEADSET;
++        }
++        if (device2 == AUDIO_DEVICE_NONE) {
+             device2 = mAvailableOutputDevices & AUDIO_DEVICE_OUT_SPEAKER;
+         }
+ 
+@@ -2758,7 +2766,7 @@ float AudioPolicyManagerBase::computeVolume(int stream,
+     // if volume is not 0 (not muted), force media volume to max on digital output
+     if (stream == AudioSystem::MUSIC &&
+         index != mStreams[stream].mIndexMin &&
+-        (device == AUDIO_DEVICE_OUT_AUX_DIGITAL ||
++        (/*device == AUDIO_DEVICE_OUT_AUX_DIGITAL ||*/
+          device == AUDIO_DEVICE_OUT_DGTL_DOCK_HEADSET ||
+          device == AUDIO_DEVICE_OUT_USB_ACCESSORY ||
+          device == AUDIO_DEVICE_OUT_USB_DEVICE)) {
+diff --git a/audio/audio_policy.conf b/audio/audio_policy.conf
+index d4e7844..c0d41b7 100644
+--- a/audio/audio_policy.conf
++++ b/audio/audio_policy.conf
+@@ -30,16 +30,44 @@ audio_hw_modules {
+         sampling_rates 44100
+         channel_masks AUDIO_CHANNEL_OUT_STEREO
+         formats AUDIO_FORMAT_PCM_16_BIT
+-        devices AUDIO_DEVICE_OUT_SPEAKER
++        devices AUDIO_DEVICE_OUT_EARPIECE|AUDIO_DEVICE_OUT_SPEAKER|AUDIO_DEVICE_OUT_WIRED_HEADSET|AUDIO_DEVICE_OUT_AUX_DIGITAL|AUDIO_DEVICE_OUT_WIRED_HEADPHONE
+         flags AUDIO_OUTPUT_FLAG_PRIMARY
+       }
+     }
+     inputs {
+       primary {
+-        sampling_rates 8000|16000
+-        channel_masks AUDIO_CHANNEL_IN_MONO
++        sampling_rates 8000|11025|16000|22050|32000|44100|48000
++        channel_masks AUDIO_CHANNEL_IN_MONO|AUDIO_CHANNEL_IN_STEREO
+         formats AUDIO_FORMAT_PCM_16_BIT
+-        devices AUDIO_DEVICE_IN_BUILTIN_MIC
++        devices AUDIO_DEVICE_IN_BUILTIN_MIC|AUDIO_DEVICE_IN_WIRED_HEADSET|AUDIO_DEVICE_IN_WFD
++      }
++    }
++  }
++  a2dp {
++    outputs {
++      a2dp {
++        sampling_rates 44100
++        channel_masks AUDIO_CHANNEL_OUT_STEREO
++        formats AUDIO_FORMAT_PCM_16_BIT
++        devices AUDIO_DEVICE_OUT_ALL_A2DP
++      }
++    }
++  }
++  r_submix {
++    outputs {
++      submix {
++        sampling_rates 44100|48000
++        channel_masks AUDIO_CHANNEL_OUT_STEREO
++        formats AUDIO_FORMAT_PCM_16_BIT
++        devices AUDIO_DEVICE_OUT_REMOTE_SUBMIX
++      }
++    }
++    inputs {
++      submix {
++        sampling_rates 44100|48000
++        channel_masks AUDIO_CHANNEL_IN_STEREO
++        formats AUDIO_FORMAT_PCM_16_BIT
++        devices AUDIO_DEVICE_IN_REMOTE_SUBMIX
+       }
+     }
+   }
+diff --git a/wifi/Android.mk b/wifi/Android.mk
+index 51afe3a..2a0da3a 100644
+--- a/wifi/Android.mk
++++ b/wifi/Android.mk
+@@ -43,7 +43,13 @@ ifdef WIFI_EXT_MODULE_NAME
+ LOCAL_CFLAGS += -DWIFI_EXT_MODULE_NAME=\"$(WIFI_EXT_MODULE_NAME)\"
+ endif
+ 
+-LOCAL_SRC_FILES += wifi/wifi.c
++ifeq ($(TARGET_CUSTOM_WIFI),)
++	LOCAL_SRC_FILES += \
++		wifi/wifi.c
++else
++	LOCAL_SRC_FILES += \
++		$(TARGET_CUSTOM_WIFI)
++endif
+ 
+ ifeq ($(BOARD_HAVE_SAMSUNG_WIFI),true)
+ LOCAL_CFLAGS += -DSAMSUNG_WIFI
+-- 
+1.8.1.5
+

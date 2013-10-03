@@ -1,0 +1,1330 @@
+From ac0ab521204319fadfd513587f889df4ddf5743f Mon Sep 17 00:00:00 2001
+From: Alan Marchesan <justcavalli@gmail.com>
+Date: Thu, 3 Oct 2013 06:43:07 +0200
+Subject: [PATCH] gs702a: initial merge of Actions code by ChristianTroy
+
+---
+ api/current.txt                                    |   2 +
+ core/java/android/content/pm/PackageManager.java   |  14 +++
+ core/java/android/view/WindowManagerPolicy.java    |  11 ++
+ core/java/android/webkit/HTML5Audio.java           |   8 ++
+ core/java/android/webkit/HTML5VideoFullScreen.java |  13 +-
+ core/java/android/webkit/HTML5VideoView.java       |  31 ++++-
+ core/java/android/webkit/HTML5VideoViewProxy.java  | 134 +++++++++++++++++----
+ .../android/webkit/PluginFullScreenHolder.java     |   7 ++
+ core/java/android/webkit/WebViewClassic.java       |   5 +
+ media/java/android/media/AudioService.java         |   2 +-
+ media/java/android/media/MediaFile.java            |  72 ++++++++++-
+ media/jni/Android.mk                               |   5 +
+ media/jni/android_media_MediaMetadataRetriever.cpp |   3 +-
+ media/jni/android_media_MediaPlayer.cpp            |   1 +
+ .../policy/impl/keyguard/KeyguardViewManager.java  |   2 +-
+ services/java/Android.mk                           |   2 +-
+ .../android/server/BluetoothManagerService.java    |  25 ++++
+ services/java/com/android/server/SystemServer.java |  28 +++++
+ services/java/com/android/server/WifiService.java  |  10 +-
+ .../java/android/telephony/TelephonyManager.java   |  39 +++++-
+ wifi/java/android/net/wifi/WifiStateMachine.java   |  85 +++++++++++--
+ 21 files changed, 452 insertions(+), 47 deletions(-)
+
+diff --git a/api/current.txt b/api/current.txt
+index 0ff0fbc..45a3b74 100644
+--- a/api/current.txt
++++ b/api/current.txt
+@@ -6661,6 +6661,8 @@ package android.content.pm {
+     field public static final java.lang.String FEATURE_TOUCHSCREEN_MULTITOUCH = "android.hardware.touchscreen.multitouch";
+     field public static final java.lang.String FEATURE_TOUCHSCREEN_MULTITOUCH_DISTINCT = "android.hardware.touchscreen.multitouch.distinct";
+     field public static final java.lang.String FEATURE_TOUCHSCREEN_MULTITOUCH_JAZZHAND = "android.hardware.touchscreen.multitouch.jazzhand";
++    field public static final java.lang.String FEATURE_TVOUT_CVBS = "actions.hardware.cvbs";
++    field public static final java.lang.String FEATURE_TVOUT_HDMI = "actions.hardware.hdmi";
+     field public static final java.lang.String FEATURE_USB_ACCESSORY = "android.hardware.usb.accessory";
+     field public static final java.lang.String FEATURE_USB_HOST = "android.hardware.usb.host";
+     field public static final java.lang.String FEATURE_WIFI = "android.hardware.wifi";
+diff --git a/core/java/android/content/pm/PackageManager.java b/core/java/android/content/pm/PackageManager.java
+index 49650cd..52ba3ad 100644
+--- a/core/java/android/content/pm/PackageManager.java
++++ b/core/java/android/content/pm/PackageManager.java
+@@ -1144,6 +1144,20 @@ public abstract class PackageManager {
+     public static final String FEATURE_TELEVISION = "android.hardware.type.television";
+ 
+     /**
++     * Feature for {@link #getSystemAvailableFeatures} and
++     * {@link #hasSystemFeature}:The device supports cvbs pattern of tvout.
++     */
++    @SdkConstant(SdkConstantType.FEATURE)
++    public static final String FEATURE_TVOUT_CVBS = "actions.hardware.cvbs";
++    
++    /**
++     * Feature for {@link #getSystemAvailableFeatures} and
++     * {@link #hasSystemFeature}: The device supports hdmi pattern of tvout.
++     */
++    @SdkConstant(SdkConstantType.FEATURE)
++    public static final String FEATURE_TVOUT_HDMI = "actions.hardware.hdmi";
++
++    /**
+      * Action to external storage service to clean out removed apps.
+      * @hide
+      */
+diff --git a/core/java/android/view/WindowManagerPolicy.java b/core/java/android/view/WindowManagerPolicy.java
+index acdbadd..0152e9d 100644
+--- a/core/java/android/view/WindowManagerPolicy.java
++++ b/core/java/android/view/WindowManagerPolicy.java
+@@ -102,6 +102,11 @@ public interface WindowManagerPolicy {
+      */
+     public final static String ACTION_HDMI_PLUGGED = "android.intent.action.HDMI_PLUGGED";
+ 
++     /**
++     * Sticky broadcast of the current CVBS plugged state.
++     */
++    public final static String ACTION_CVBS_PLUGGED = "android.intent.action.CVBS_PLUGGED";
++
+     /**
+      * Extra in {@link #ACTION_HDMI_PLUGGED} indicating the state: true if
+      * plugged in to HDMI, false if not.
+@@ -109,6 +114,12 @@ public interface WindowManagerPolicy {
+     public final static String EXTRA_HDMI_PLUGGED_STATE = "state";
+ 
+     /**
++     * Extra in {@link #ACTION_CVBS_PLUGGED} indicating the state: true if
++     * plugged in to CVBS, false if not.
++     */
++    public final static String EXTRA_CVBS_PLUGGED_STATE = "state";
++
++    /**
+      * Pass this event to the user / app.  To be returned from
+      * {@link #interceptKeyBeforeQueueing}.
+      */
+diff --git a/core/java/android/webkit/HTML5Audio.java b/core/java/android/webkit/HTML5Audio.java
+index 684ec07..891c606 100644
+--- a/core/java/android/webkit/HTML5Audio.java
++++ b/core/java/android/webkit/HTML5Audio.java
+@@ -341,6 +341,14 @@ class HTML5Audio extends Handler
+             return 0;
+         }
+     }
++    
++    // cheasonxie add on 2012.11.15
++    // called by native code
++    private void setVolume(float vol) {
++        if(mMediaPlayer != null) {
++            mMediaPlayer.setVolume(vol, vol);
++        }
++    }
+ 
+     private native void nativeOnBuffering(int percent, int nativePointer);
+     private native void nativeOnEnded(int nativePointer);
+diff --git a/core/java/android/webkit/HTML5VideoFullScreen.java b/core/java/android/webkit/HTML5VideoFullScreen.java
+index 9b93805..b4e3813 100644
+--- a/core/java/android/webkit/HTML5VideoFullScreen.java
++++ b/core/java/android/webkit/HTML5VideoFullScreen.java
+@@ -181,6 +181,13 @@ public class HTML5VideoFullScreen extends HTML5VideoView
+         mPlayer.setScreenOnWhilePlaying(true);
+         mPlayer.setOnVideoSizeChangedListener(mSizeChangedListener);
+         prepareDataAndDisplayMode(mProxy);
++		if (mProgressView != null) {
++	        FrameLayout.LayoutParams layoutParams = new FrameLayout.LayoutParams(
++                    ViewGroup.LayoutParams.WRAP_CONTENT,
++                    ViewGroup.LayoutParams.WRAP_CONTENT,
++                    Gravity.CENTER);
++            mLayout.addView(mProgressView, layoutParams);
++        }
+     }
+ 
+ 
+@@ -195,7 +202,10 @@ public class HTML5VideoFullScreen extends HTML5VideoView
+     @Override
+     public void onPrepared(MediaPlayer mp) {
+         super.onPrepared(mp);
+-
++        if (fullScreenExited() == true) {			
++			System.out.println("onPrepared but fullScreenExited in FULLSCREEN mode");
++			return;
++        }
+         mVideoSurfaceView.setOnTouchListener(this);
+         // Get the capabilities of the player for this stream
+         Metadata data = mp.getMetadata(MediaPlayer.METADATA_ALL,
+@@ -301,7 +311,6 @@ public class HTML5VideoFullScreen extends HTML5VideoView
+ 
+             mProgressView = client.getVideoLoadingProgressView();
+             if (mProgressView != null) {
+-                mLayout.addView(mProgressView, layoutParams);
+                 mProgressView.setVisibility(View.VISIBLE);
+             }
+         }
+diff --git a/core/java/android/webkit/HTML5VideoView.java b/core/java/android/webkit/HTML5VideoView.java
+index 0e8a5db..dde66c2 100644
+--- a/core/java/android/webkit/HTML5VideoView.java
++++ b/core/java/android/webkit/HTML5VideoView.java
+@@ -77,7 +77,9 @@ public class HTML5VideoView implements MediaPlayer.OnPreparedListener {
+     // The spec says the timer should fire every 250 ms or less.
+     private static final int TIMEUPDATE_PERIOD = 250;  // ms
+     private boolean mSkipPrepare = false;
+-
++    public MediaPlayer getMediaPlayer(){
++		return mPlayer;
++	}
+     // common Video control FUNCTIONS:
+     public void start() {
+         if (mCurrentState == STATE_PREPARED) {
+@@ -109,7 +111,7 @@ public class HTML5VideoView implements MediaPlayer.OnPreparedListener {
+     }
+ 
+     public int getDuration() {
+-        if (mCurrentState == STATE_PREPARED) {
++        if (mCurrentState == STATE_PREPARED && mPlayer != null) {
+             return mPlayer.getDuration();
+         } else {
+             return -1;
+@@ -169,11 +171,17 @@ public class HTML5VideoView implements MediaPlayer.OnPreparedListener {
+ 
+     // Every time we start a new Video, we create a VideoView and a MediaPlayer
+     public void init(int videoLayerId, int position, boolean skipPrepare) {
++	System.out.println("init");
++	
++	System.out.println("3 "+mPlayer);
+         if (mPlayer == null) {
+-            mPlayer = new MediaPlayer();
++            mPlayer = new MediaPlayer();			
++			System.out.println("new a MediaPlayer");
+             mCurrentState = STATE_INITIALIZED;
+         }
+         mSkipPrepare = skipPrepare;
++		
++		System.out.println("skipPrepare:"+skipPrepare);
+         // If we want to skip the prepare, then we keep the state.
+         if (!mSkipPrepare) {
+             mCurrentState = STATE_INITIALIZED;
+@@ -226,9 +234,14 @@ public class HTML5VideoView implements MediaPlayer.OnPreparedListener {
+     public void setOnInfoListener(HTML5VideoViewProxy proxy) {
+         mPlayer.setOnInfoListener(proxy);
+     }
++	
++    public void setOnVideoSizeChangedListener(HTML5VideoViewProxy proxy) {
++        mPlayer.setOnVideoSizeChangedListener(proxy);
++    }
+ 
+     public void prepareDataCommon(HTML5VideoViewProxy proxy) {
+-        if (!mSkipPrepare) {
++        if (!mSkipPrepare) {			
++			System.out.println("prepareDataCommon do not mSkipPrepare");
+             try {
+                 mPlayer.reset();
+                 mPlayer.setDataSource(proxy.getContext(), mUri, mHeaders);
+@@ -241,7 +254,8 @@ public class HTML5VideoView implements MediaPlayer.OnPreparedListener {
+                 e.printStackTrace();
+             }
+             mCurrentState = STATE_PREPARING;
+-        } else {
++        } else {        
++	    	System.out.println("prepareDataCommon mSkipPrepare");
+             // If we skip prepare and the onPrepared happened in inline mode, we
+             // don't need to call prepare again, we just need to call onPrepared
+             // to refresh the state here.
+@@ -253,6 +267,8 @@ public class HTML5VideoView implements MediaPlayer.OnPreparedListener {
+     }
+ 
+     public void reprepareData(HTML5VideoViewProxy proxy) {
++		if(mPlayer == null)
++			return;
+         mPlayer.reset();
+         prepareDataCommon(proxy);
+     }
+@@ -267,6 +283,7 @@ public class HTML5VideoView implements MediaPlayer.OnPreparedListener {
+         setOnPreparedListener(proxy);
+         setOnErrorListener(proxy);
+         setOnInfoListener(proxy);
++        setOnVideoSizeChangedListener(proxy);
+ 
+         prepareDataCommon(proxy);
+     }
+@@ -301,12 +318,14 @@ public class HTML5VideoView implements MediaPlayer.OnPreparedListener {
+ 
+     @Override
+     public void onPrepared(MediaPlayer mp) {
++        System.out.println("onPrepared");
+         mCurrentState = STATE_PREPARED;
+         seekTo(mSaveSeekTime);
+         if (mProxy != null) {
+             mProxy.onPrepared(mp);
+         }
+-        if (mPauseDuringPreparing) {
++        if (mPauseDuringPreparing) {			
++			System.out.println("onPrepared mPauseDuringPreparing is setted");
+             pauseAndDispatch(mProxy);
+             mPauseDuringPreparing = false;
+         }
+diff --git a/core/java/android/webkit/HTML5VideoViewProxy.java b/core/java/android/webkit/HTML5VideoViewProxy.java
+index a3d62ae..1aabc52 100644
+--- a/core/java/android/webkit/HTML5VideoViewProxy.java
++++ b/core/java/android/webkit/HTML5VideoViewProxy.java
+@@ -31,6 +31,9 @@ import android.os.Handler;
+ import android.os.Looper;
+ import android.os.Message;
+ import android.util.Log;
++import android.media.AudioManager;
++import android.content.Intent;
++import android.content.ContextWrapper;
+ import android.view.KeyEvent;
+ import android.view.View;
+ 
+@@ -50,7 +53,8 @@ class HTML5VideoViewProxy extends Handler
+                           MediaPlayer.OnErrorListener,
+                           MediaPlayer.OnInfoListener,
+                           SurfaceTexture.OnFrameAvailableListener,
+-                          View.OnKeyListener {
++                          View.OnKeyListener,
++                          MediaPlayer.OnVideoSizeChangedListener {
+     // Logging tag.
+     private static final String LOGTAG = "HTML5VideoViewProxy";
+ 
+@@ -124,7 +128,9 @@ class HTML5VideoViewProxy extends Handler
+                             playerState);
+                     if (playerState >= HTML5VideoView.STATE_PREPARED
+                             && !foundInTree) {
+-                        mHTML5VideoView.pauseAndDispatch(mCurrentProxy);
++						//System.out.println("setBaseLayer not foundInTree so pauseAndDispatch");
++                        //mHTML5VideoView.pauseAndDispatch(mCurrentProxy);						
++                        //mHTML5VideoView.deleteSurfaceTexture();
+                     }
+                 }
+             }
+@@ -132,6 +138,7 @@ class HTML5VideoViewProxy extends Handler
+ 
+         // When a WebView is paused, we also want to pause the video in it.
+         public static void pauseAndDispatch() {
++        System.out.println("pauseAndDispatch");
+             if (mHTML5VideoView != null) {
+                 mHTML5VideoView.pauseAndDispatch(mCurrentProxy);
+             }
+@@ -143,6 +150,8 @@ class HTML5VideoViewProxy extends Handler
+                 int savePosition = 0;
+                 boolean canSkipPrepare = false;
+                 boolean forceStart = false;
++				
++				Log.w(LOGTAG, "enterFullScreenVideo in layer "+ layerId);
+                 if (mHTML5VideoView != null) {
+                     // We don't allow enter full screen mode while the previous
+                     // full screen video hasn't finished yet.
+@@ -151,7 +160,7 @@ class HTML5VideoViewProxy extends Handler
+                         return;
+                     }
+                     int playerState = mHTML5VideoView.getCurrentState();
+-                    // If we are playing the same video, then it is better to
++                    // If we are playing the same video, then00 it is better to
+                     // save the current position.
+                     if (layerId == mHTML5VideoView.getVideoLayerId()) {
+                         savePosition = mHTML5VideoView.getCurrentPosition();
+@@ -161,10 +170,12 @@ class HTML5VideoViewProxy extends Handler
+                                 && !mHTML5VideoView.isFullScreenMode();
+                     }
+                     if (!canSkipPrepare) {
++						Log.w(LOGTAG, "enterFullScreenVideo reset");
+                         mHTML5VideoView.reset();
+                     } else {
+                         forceStart = playerState == HTML5VideoView.STATE_PREPARING
+                                 || playerState == HTML5VideoView.STATE_PLAYING;
++						Log.w(LOGTAG, "enterFullScreenVideo not reset playerState="+playerState);
+                     }
+                 }
+                 mHTML5VideoView = new HTML5VideoFullScreen(proxy.getContext(),
+@@ -191,7 +202,14 @@ class HTML5VideoViewProxy extends Handler
+         public static void play(String url, int time, HTML5VideoViewProxy proxy,
+                 WebChromeClient client, int videoLayerId) {
+             int currentVideoLayerId = -1;
+-            boolean backFromFullScreenMode = false;
++            boolean backFromFullScreenMode = false;			
++			boolean canSkipPrepare = false;
++            
++			System.out.println("stop back groudMusic");
++			//stop the backGround music
++			Intent intent = new Intent(AudioManager.ACTION_AUDIO_BECOMING_NOISY);	
++			proxy.getContext().sendBroadcast(intent);	
++			
+             if (mHTML5VideoView != null) {
+                 currentVideoLayerId = mHTML5VideoView.getVideoLayerId();
+                 backFromFullScreenMode = mHTML5VideoView.fullScreenExited();
+@@ -200,6 +218,7 @@ class HTML5VideoViewProxy extends Handler
+                 // javascript will switch the src and call play.
+                 // In this case, we can just reuse the same full screen view,
+                 // and play the video after prepared.
++									
+                 if (mHTML5VideoView.isFullScreenMode()
+                     && !backFromFullScreenMode
+                     && currentVideoLayerId != videoLayerId
+@@ -211,7 +230,7 @@ class HTML5VideoViewProxy extends Handler
+                     return;
+                 }
+             }
+-
++			System.out.println("html5video play in layer " + videoLayerId);
+             boolean skipPrepare = false;
+             boolean createInlineView = false;
+             if (backFromFullScreenMode
+@@ -229,7 +248,7 @@ class HTML5VideoViewProxy extends Handler
+                 // inside the HTML5VideoView.
+                 if (mHTML5VideoView != null) {
+                     if (!backFromFullScreenMode) {
+-                        mHTML5VideoView.pauseAndDispatch(mCurrentProxy);
++                        mHTML5VideoView.pause();
+                     }
+                     mHTML5VideoView.reset();
+                 }
+@@ -246,6 +265,7 @@ class HTML5VideoViewProxy extends Handler
+ 
+             if (mCurrentProxy == proxy) {
+                 // Here, we handle the case when we keep playing with one video
++				System.out.println("we handle the case when we keep playing with one video");
+                 if (!mHTML5VideoView.isPlaying()) {
+                     mHTML5VideoView.seekTo(time);
+                     mHTML5VideoView.start();
+@@ -269,28 +289,45 @@ class HTML5VideoViewProxy extends Handler
+             }
+             return currentPosMs;
+         }
++		
++        public static int getDuration() {
++            int DurationMs = 0;
++            if (mHTML5VideoView != null) {
++                DurationMs = mHTML5VideoView.getDuration();
++            }
++            return DurationMs;
++        }
+ 
+-        public static void seek(int time, HTML5VideoViewProxy proxy) {
++        public static void seek(int time, HTML5VideoViewProxy proxy) {			
++			System.out.println("VideoPlayer seek");
+             if (mCurrentProxy == proxy && time >= 0 && mHTML5VideoView != null) {
+                 mHTML5VideoView.seekTo(time);
+             }
+         }
+ 
+-        public static void pause(HTML5VideoViewProxy proxy) {
++        public static void pause(HTML5VideoViewProxy proxy) {			
++			System.out.println("VideoPlayer pause");
+             if (mCurrentProxy == proxy && mHTML5VideoView != null) {
+                 mHTML5VideoView.pause();
+             }
+         }
+ 
+-        public static void onPrepared() {
++        public static void onPrepared() {			
++			System.out.println("VideoPlayer onPrepared");
+             if (!mHTML5VideoView.isFullScreenMode()) {
+                 mHTML5VideoView.start();
+             }
+         }
+ 
+-        public static void end() {
++        public static void end() {			
++			System.out.println("VideoPlayer end isVideoSelfEnded:"+isVideoSelfEnded);
+             mHTML5VideoView.showControllerInFullScreen();
+             if (mCurrentProxy != null) {
++				mHTML5VideoView.pauseAndDispatch(mCurrentProxy);				
++				mHTML5VideoView.setStartWhenPrepared(false);
++            	mHTML5VideoView.reprepareData(mCurrentProxy);
++				mHTML5VideoView.pauseAndDispatch(mCurrentProxy);
++				mHTML5VideoView.seekTo(0);
+                 if (isVideoSelfEnded)
+                     mCurrentProxy.dispatchOnEnded();
+                 else
+@@ -298,6 +335,13 @@ class HTML5VideoViewProxy extends Handler
+             }
+             isVideoSelfEnded = false;
+         }
++        
++        // cheasonxie add on 2012.11.15
++        public static void setVolume(float vol) {
++            if(mHTML5VideoView != null && mHTML5VideoView.getMediaPlayer() != null) {
++                mHTML5VideoView.getMediaPlayer().setVolume(vol, vol);
++            }
++        }
+     }
+ 
+     // A bunch event listeners for our VideoView
+@@ -313,6 +357,16 @@ class HTML5VideoViewProxy extends Handler
+         msg.obj = map;
+         mWebCoreHandler.sendMessage(msg);
+     }
++	
++    public void onVideoSizeChanged(MediaPlayer mp,int w, int h) {
++        Message msg = Message.obtain(mWebCoreHandler, PREPARED);
++        Map<String, Object> map = new HashMap<String, Object>();
++        map.put("dur", new Integer(-1));
++        map.put("width", new Integer(w));
++        map.put("height", new Integer(h));
++        msg.obj = map;
++        mWebCoreHandler.sendMessage(msg);
++    }
+ 
+     // MediaPlayer.OnCompletionListener;
+     @Override
+@@ -328,7 +382,7 @@ class HTML5VideoViewProxy extends Handler
+     @Override
+     public boolean onError(MediaPlayer mp, int what, int extra) {
+         sendMessage(obtainMessage(ERROR));
+-        return false;
++        return true;
+     }
+ 
+     public void dispatchOnEnded() {
+@@ -376,6 +430,8 @@ class HTML5VideoViewProxy extends Handler
+                 if (client != null) {
+                     VideoPlayer.play(url, mSeekPosition, this, client, videoLayerID);
+                 }
++				if (mWebView.isPaused() == true)
++				   pauseAndDispatch();
+                 break;
+             }
+             case ENTER_FULLSCREEN:{
+@@ -410,6 +466,7 @@ class HTML5VideoViewProxy extends Handler
+                 break;
+             }
+             case LOAD_DEFAULT_POSTER: {
++				System.out.println("LOAD_DEFAULT_POSTER");
+                 WebChromeClient client = mWebView.getWebChromeClient();
+                 if (client != null) {
+                     doSetPoster(client.getDefaultVideoPoster());
+@@ -424,10 +481,12 @@ class HTML5VideoViewProxy extends Handler
+             }
+             case BUFFERING_START: {
+                 VideoPlayer.setPlayerBuffering(true);
++				System.out.println("BUFFERING_START");
+                 break;
+             }
+             case BUFFERING_END: {
+                 VideoPlayer.setPlayerBuffering(false);
++				System.out.println("BUFFERING_END");
+                 break;
+             }
+         }
+@@ -598,6 +657,7 @@ class HTML5VideoViewProxy extends Handler
+     private HTML5VideoViewProxy(WebViewClassic webView, int nativePtr) {
+         // This handler is for the main (UI) thread.
+         super(Looper.getMainLooper());
++		System.out.println("new HTML5VideoViewProxy");
+         // Save the WebView object.
+         mWebView = webView;
+         // Pass Proxy into webview, such that every time we have a setBaseLayer
+@@ -615,7 +675,8 @@ class HTML5VideoViewProxy extends Handler
+             @Override
+             public void handleMessage(Message msg) {
+                 switch (msg.what) {
+-                    case PREPARED: {
++                    case PREPARED: {						
++						System.out.println("nativeOnPrepared");
+                         Map<String, Object> map = (Map<String, Object>) msg.obj;
+                         Integer duration = (Integer) map.get("dur");
+                         Integer width = (Integer) map.get("width");
+@@ -624,24 +685,29 @@ class HTML5VideoViewProxy extends Handler
+                                 height.intValue(), mNativePointer);
+                         break;
+                     }
+-                    case ENDED:
++                    case ENDED:						
++						System.out.println("nativeOnEnded");
+                         mSeekPosition = 0;
+                         nativeOnEnded(mNativePointer);
+                         break;
+-                    case PAUSED:
++                    case PAUSED:						
++						System.out.println("nativeOnPaused");
+                         nativeOnPaused(mNativePointer);
+                         break;
+-                    case POSTER_FETCHED:
++                    case POSTER_FETCHED:						
++						System.out.println("nativeOnPosterFetched");
+                         Bitmap poster = (Bitmap) msg.obj;
+                         nativeOnPosterFetched(poster, mNativePointer);
+                         break;
+                     case TIMEUPDATE:
+                         nativeOnTimeupdate(msg.arg1, mNativePointer);
+                         break;
+-                    case STOPFULLSCREEN:
++                    case STOPFULLSCREEN:						
++						System.out.println("STOPFULLSCREEN");
+                         nativeOnStopFullscreen(msg.arg1, mNativePointer);
+                         break;
+-                    case RESTORESTATE:
++                    case RESTORESTATE:						
++						System.out.println("RESTORESTATE");
+                         nativeOnRestoreState(mNativePointer);
+                         break;
+                 }
+@@ -675,7 +741,8 @@ class HTML5VideoViewProxy extends Handler
+      * Play a video stream.
+      * @param url is the URL of the video stream.
+      */
+-    public void play(String url, int position, int videoLayerID) {
++    public void play(String url, int position, int videoLayerID) {    
++	    System.out.println("play called by webkit");
+         if (url == null) {
+             return;
+         }
+@@ -708,7 +775,8 @@ class HTML5VideoViewProxy extends Handler
+      * Seek into the video stream.
+      * @param  time is the position in the video stream.
+      */
+-    public void seek(int time) {
++    public void seek(int time) {    
++	    System.out.println("seek called by webkit");
+         Message message = obtainMessage(SEEK);
+         message.obj = new Integer(time);
+         sendMessage(message);
+@@ -718,6 +786,7 @@ class HTML5VideoViewProxy extends Handler
+      * Pause the playback.
+      */
+     public void pause() {
++	    System.out.println("pause called by webkit");
+         Message message = obtainMessage(PAUSE);
+         sendMessage(message);
+     }
+@@ -725,7 +794,8 @@ class HTML5VideoViewProxy extends Handler
+     /**
+      * Tear down this proxy object.
+      */
+-    public void teardown() {
++    public void teardown() {    
++	    System.out.println("teardown called by webkit");
+         // This is called by the C++ MediaPlayerPrivate dtor.
+         // Cancel any active poster download.
+         if (mPosterDownloader != null) {
+@@ -738,7 +808,8 @@ class HTML5VideoViewProxy extends Handler
+      * Load the poster image.
+      * @param url is the URL of the poster image.
+      */
+-    public void loadPoster(String url) {
++    public void loadPoster(String url) {    
++	    System.out.println("loadPoster:"+url);
+         if (url == null) {
+             Message message = obtainMessage(LOAD_DEFAULT_POSTER);
+             sendMessage(message);
+@@ -759,14 +830,17 @@ class HTML5VideoViewProxy extends Handler
+     }
+ 
+     public void pauseAndDispatch() {
++	    System.out.println("pauseAndDispatch called by WebView");
+         VideoPlayer.pauseAndDispatch();
+     }
+ 
+     public void enterFullScreenVideo(int layerId, String url) {
++	    System.out.println("enterFullScreenVideo called by WebView");
+         VideoPlayer.enterFullScreenVideo(layerId, url, this, mWebView);
+     }
+ 
+     public void exitFullScreenVideo() {
++	    System.out.println("exitFullScreenVideo called by WebView");		
+         VideoPlayer.exitFullScreenVideo(this, mWebView);
+     }
+ 
+@@ -783,6 +857,24 @@ class HTML5VideoViewProxy extends Handler
+     /* package */ WebViewClassic getWebView() {
+         return mWebView;
+     }
++	
++    private float getMaxTimeSeekable() {
++    	float t;
++        try {
++    	   	t = VideoPlayer.getDuration() / 1000.0f;;
++
++        } catch (IllegalStateException ex) {
++           Log.w(LOGTAG, "MediaPlayer IllegalStateException: "+ex);
++           t = 0;
++        }
++        return t;
++    }
++    
++    // cheasonxie add on 2012.11.15
++    // called by native code
++    private void setVolume(float vol) {
++        VideoPlayer.setVolume(vol);
++    }
+ 
+     private native void nativeOnPrepared(int duration, int width, int height, int nativePointer);
+     private native void nativeOnEnded(int nativePointer);
+diff --git a/core/java/android/webkit/PluginFullScreenHolder.java b/core/java/android/webkit/PluginFullScreenHolder.java
+index 665cd9d..d7cdaab 100644
+--- a/core/java/android/webkit/PluginFullScreenHolder.java
++++ b/core/java/android/webkit/PluginFullScreenHolder.java
+@@ -49,6 +49,13 @@ class PluginFullScreenHolder {
+         mNpp = npp;
+         mOrientation = orientation;
+     }
++    public void setKeepScreenOn(boolean screenOn){
++    if (mLayout != null) {
++       System.out.println("Full screen setKeepScreenOn"+screenOn);
++           mLayout.setKeepScreenOn(screenOn);
++    }
++  }
++    
+ 
+     public void setContentView(View contentView) {
+ 
+diff --git a/core/java/android/webkit/WebViewClassic.java b/core/java/android/webkit/WebViewClassic.java
+index 538d478..80bb1a7 100644
+--- a/core/java/android/webkit/WebViewClassic.java
++++ b/core/java/android/webkit/WebViewClassic.java
+@@ -3521,6 +3521,7 @@ public final class WebViewClassic implements WebViewProvider, WebViewProvider.Sc
+             if (mNativeClass != 0) {
+                 nativeSetPauseDrawing(mNativeClass, false);
+             }
++            invalidate();
+         }
+         // We get a call to onResume for new WebViews (i.e. mIsPaused will be false). We need
+         // to ensure that the Watchdog thread is running for the new WebView, so call
+@@ -7445,6 +7446,8 @@ public final class WebViewClassic implements WebViewProvider, WebViewProvider.Sc
+ 
+                 case SCREEN_ON:
+                     mWebView.setKeepScreenOn(msg.arg1 == 1);
++                    if (inFullScreenMode())
++                        mFullScreenHolder.setKeepScreenOn(msg.arg1 == 1);
+                     break;
+ 
+                 case EXIT_FULLSCREEN_VIDEO:
+@@ -7465,6 +7468,7 @@ public final class WebViewClassic implements WebViewProvider, WebViewProvider.Sc
+                     mFullScreenHolder = new PluginFullScreenHolder(WebViewClassic.this, orientation, npp);
+                     mFullScreenHolder.setContentView(view);
+                     mFullScreenHolder.show();
++                    mFullScreenHolder.setKeepScreenOn(mWebView.getKeepScreenOn());
+                     invalidate();
+ 
+                     break;
+@@ -7670,6 +7674,7 @@ public final class WebViewClassic implements WebViewProvider, WebViewProvider.Sc
+                     scrollDraggedSelectionHandleIntoView();
+                     break;
+ 
++
+                 default:
+                     super.handleMessage(msg);
+                     break;
+diff --git a/media/java/android/media/AudioService.java b/media/java/android/media/AudioService.java
+index e9bd455..961ee95 100644
+--- a/media/java/android/media/AudioService.java
++++ b/media/java/android/media/AudioService.java
+@@ -440,7 +440,7 @@ public class AudioService extends IAudioService.Stub implements OnFinished {
+     public final static int STREAM_REMOTE_MUSIC = -200;
+ 
+     // Devices for which the volume is fixed and VolumePanel slider should be disabled
+-    final int mFixedVolumeDevices = AudioSystem.DEVICE_OUT_AUX_DIGITAL |
++    final int mFixedVolumeDevices = /* AudioSystem.DEVICE_OUT_AUX_DIGITAL | */
+             AudioSystem.DEVICE_OUT_DGTL_DOCK_HEADSET |
+             AudioSystem.DEVICE_OUT_ALL_USB;
+ 
+diff --git a/media/java/android/media/MediaFile.java b/media/java/android/media/MediaFile.java
+index 95c9ad4..3a6a66d 100644
+--- a/media/java/android/media/MediaFile.java
++++ b/media/java/android/media/MediaFile.java
+@@ -59,8 +59,14 @@ public class MediaFile {
+ 
+     // More audio file types
+     public static final int FILE_TYPE_DTS   = 300;
++    public static final int FILE_TYPE_RM    = 301;
++    public static final int FILE_TYPE_AA    = 302;
++    public static final int FILE_TYPE_AIFF  = 303;
++    public static final int FILE_TYPE_MPC   = 304;
++    public static final int FILE_TYPE_ALAC  = 305;
++    public static final int FILE_TYPE_APE   = 306;
+     private static final int FIRST_AUDIO_FILE_TYPE2 = FILE_TYPE_DTS;
+-    private static final int LAST_AUDIO_FILE_TYPE2 = FILE_TYPE_DTS;
++    private static final int LAST_AUDIO_FILE_TYPE2 = FILE_TYPE_APE;
+ 
+     // MIDI file types
+     public static final int FILE_TYPE_MID     = 17;
+@@ -86,8 +92,12 @@ public class MediaFile {
+ 
+     // More video file types
+     public static final int FILE_TYPE_MP2PS   = 200;
++    public static final int FILE_TYPE_FLV     = 201;
++    public static final int FILE_TYPE_MPG     = 202;
++    public static final int FILE_TYPE_OGM     = 203;    
++    public static final int FILE_TYPE_RMVB    = 204;
+     private static final int FIRST_VIDEO_FILE_TYPE2 = FILE_TYPE_MP2PS;
+-    private static final int LAST_VIDEO_FILE_TYPE2 = FILE_TYPE_MP2PS;
++    private static final int LAST_VIDEO_FILE_TYPE2 = FILE_TYPE_RMVB;
+ 
+     // Image file types
+     public static final int FILE_TYPE_JPEG    = 32;
+@@ -96,8 +106,9 @@ public class MediaFile {
+     public static final int FILE_TYPE_BMP     = 35;
+     public static final int FILE_TYPE_WBMP    = 36;
+     public static final int FILE_TYPE_WEBP    = 37;
++    public static final int FILE_TYPE_TIFF    = 38;
+     private static final int FIRST_IMAGE_FILE_TYPE = FILE_TYPE_JPEG;
+-    private static final int LAST_IMAGE_FILE_TYPE = FILE_TYPE_WEBP;
++    private static final int LAST_IMAGE_FILE_TYPE = FILE_TYPE_TIFF;
+ 
+     // Playlist file types
+     public static final int FILE_TYPE_M3U      = 41;
+@@ -185,7 +196,8 @@ public class MediaFile {
+ 
+     static {
+         addFileType("MP3", FILE_TYPE_MP3, "audio/mpeg", MtpConstants.FORMAT_MP3);
+-        addFileType("MPGA", FILE_TYPE_MP3, "audio/mpeg", MtpConstants.FORMAT_MP3);
++        addFileType("MP2", FILE_TYPE_MP3, "audio/mpeg", MtpConstants.FORMAT_MP3);
++        addFileType("MP1", FILE_TYPE_MP3, "audio/mpeg", MtpConstants.FORMAT_MP3);
+         addFileType("M4A", FILE_TYPE_M4A, "audio/mp4", MtpConstants.FORMAT_MPEG);
+         addFileType("WAV", FILE_TYPE_WAV, "audio/x-wav", MtpConstants.FORMAT_WAV);
+         addFileType("WAV", FILE_TYPE_PCM, "audio/wav");
+@@ -204,6 +216,31 @@ public class MediaFile {
+         addFileType("AAC", FILE_TYPE_AAC, "audio/aac-adts", MtpConstants.FORMAT_AAC);
+         addFileType("MKA", FILE_TYPE_MKA, "audio/x-matroska");
+ 
++        addFileType("RM", FILE_TYPE_RM, "audio/x-pn-realaudio");
++        addFileType("RAM", FILE_TYPE_RM, "audio/x-pn-realaudio");
++        addFileType("DTS", FILE_TYPE_DTS, "audio/x-dts");
++        addFileType("AC3", FILE_TYPE_AC3, "audio/x-ac3");
++        addFileType("AA", FILE_TYPE_AA, "audio/audible");
++        addFileType("AAX", FILE_TYPE_AA, "audio/audible");
++        addFileType("FLAC", FILE_TYPE_FLAC, "audio/x-flac");
++        addFileType("APE", FILE_TYPE_APE, "audio/x-ape");  
++        addFileType("DTS", FILE_TYPE_DTS, "audio/DTS");
++        addFileType("AC3", FILE_TYPE_AC3, "audio/AC3");
++        addFileType("MP3", FILE_TYPE_MP3, "audio/MP3");
++        addFileType("AAC", FILE_TYPE_AAC, "audio/AAC");
++        addFileType("AMR", FILE_TYPE_AMR, "audio/AMR");
++        addFileType("WMA", FILE_TYPE_WMA, "audio/WMASTD");
++        addFileType("WMA", FILE_TYPE_WMA, "audio/WMALSL");
++        addFileType("WMA", FILE_TYPE_WMA, "audio/WMAPRO");
++        addFileType("OGG", FILE_TYPE_OGG, "audio/OGG");
++        addFileType("APE", FILE_TYPE_APE, "audio/APE");
++        addFileType("FLAC", FILE_TYPE_FLAC, "audio/FLAC");
++        addFileType("RM", FILE_TYPE_RM, "audio/COOK");
++        addFileType("RA", FILE_TYPE_RM, "audio/COOK");
++        addFileType("PCM", FILE_TYPE_PCM, "audio/PCM");
++        addFileType("PCM", FILE_TYPE_PCM, "audio/ADPCM");
++        addFileType("AWB", FILE_TYPE_AWB, "audio/AWB");
++
+         addFileType("MID", FILE_TYPE_MID, "audio/midi");
+         addFileType("MIDI", FILE_TYPE_MID, "audio/midi");
+         addFileType("XMF", FILE_TYPE_MID, "audio/midi");
+@@ -218,6 +255,7 @@ public class MediaFile {
+         addFileType("MPG", FILE_TYPE_MP4, "video/mpeg", MtpConstants.FORMAT_MPEG);
+         addFileType("MP4", FILE_TYPE_MP4, "video/mp4", MtpConstants.FORMAT_MPEG);
+         addFileType("M4V", FILE_TYPE_M4V, "video/mp4", MtpConstants.FORMAT_MPEG);
++        addFileType("MOV", FILE_TYPE_M4V, "video/mp4", MtpConstants.FORMAT_MPEG);
+         addFileType("3GP", FILE_TYPE_3GPP, "video/3gpp",  MtpConstants.FORMAT_3GP_CONTAINER);
+         addFileType("3GPP", FILE_TYPE_3GPP, "video/3gpp", MtpConstants.FORMAT_3GP_CONTAINER);
+         addFileType("3G2", FILE_TYPE_3GPP2, "video/3gpp2", MtpConstants.FORMAT_3GP_CONTAINER);
+@@ -229,8 +267,32 @@ public class MediaFile {
+ 
+         addFileType("AVI", FILE_TYPE_AVI, "video/avi");
+ 
++        addFileType("TS", FILE_TYPE_MP2TS, "video/ts");
++        addFileType("M2TS", FILE_TYPE_MP2TS, "video/ts");
++        addFileType("MTS", FILE_TYPE_MP2TS, "video/ts");
++        addFileType("TP", FILE_TYPE_MP2TS, "video/ts");
++        addFileType("F4V", FILE_TYPE_FLV, "video/flv");
++        addFileType("FLV", FILE_TYPE_FLV, "video/flv");
++        addFileType("RMVB", FILE_TYPE_RMVB, "video/rm");
++        addFileType("RM", FILE_TYPE_RMVB, "video/rm");
++        addFileType("DAT", FILE_TYPE_MPG, "video/mpg");
++        addFileType("VOB", FILE_TYPE_MPG, "video/mpg");
++        addFileType("EVO", FILE_TYPE_MPG, "video/mpg");
++        addFileType("MKV", FILE_TYPE_MKV, "video/mkv");
++        addFileType("WEBM", FILE_TYPE_WEBM, "video/mkv");
++        addFileType("WMV", FILE_TYPE_WMV, "video/wmv");
++        addFileType("ASF", FILE_TYPE_ASF, "video/wmv");
++        addFileType("DIVX", FILE_TYPE_DIVX, "video/avi");
++        addFileType("OGG", FILE_TYPE_OGM, "video/ogm");
++        addFileType("OGM", FILE_TYPE_OGM, "video/ogm");
++        addFileType("3GP", FILE_TYPE_3GPP, "video/mp4");
++        addFileType("3GPP", FILE_TYPE_3GPP, "video/mp4");
++        addFileType("3G2", FILE_TYPE_3GPP2, "video/mp4");
++        addFileType("3GPP2", FILE_TYPE_3GPP2, "video/mp4");
++
+         if (isWMVEnabled()) {
+             addFileType("WMV", FILE_TYPE_WMV, "video/x-ms-wmv", MtpConstants.FORMAT_WMV);
++            addFileType("WMV", FILE_TYPE_WMV, "video/wmv");
+             addFileType("ASF", FILE_TYPE_ASF, "video/x-ms-asf");
+         }
+ 
+@@ -239,6 +301,8 @@ public class MediaFile {
+         addFileType("GIF", FILE_TYPE_GIF, "image/gif", MtpConstants.FORMAT_GIF);
+         addFileType("PNG", FILE_TYPE_PNG, "image/png", MtpConstants.FORMAT_PNG);
+         addFileType("BMP", FILE_TYPE_BMP, "image/x-ms-bmp", MtpConstants.FORMAT_BMP);
++        addFileType("TIFF", FILE_TYPE_TIFF, "image/tiff");
++        addFileType("TIF", FILE_TYPE_TIFF, "image/tif");
+         addFileType("WBMP", FILE_TYPE_WBMP, "image/vnd.wap.wbmp");
+         addFileType("WEBP", FILE_TYPE_WEBP, "image/webp");
+ 
+diff --git a/media/jni/Android.mk b/media/jni/Android.mk
+index 6294704..6f2f683 100644
+--- a/media/jni/Android.mk
++++ b/media/jni/Android.mk
+@@ -36,6 +36,7 @@ LOCAL_SHARED_LIBRARIES := \
+     libusbhost \
+     libexif \
+     libstagefright_amrnb_common \
++    libalc \
+ 
+ LOCAL_REQUIRED_MODULES := \
+     libexif_jni
+@@ -44,6 +45,10 @@ LOCAL_STATIC_LIBRARIES := \
+     libstagefright_amrnbenc
+ 
+ LOCAL_C_INCLUDES += \
++    $(call include-path-for, alsp) \
++    $(TOP)/frameworks/av/include/alsp/inc \
++    $(TOP)/frameworks/av/include/alsp/inc/common \
++    $(TOP)/system/core/include/ion \
+     external/jhead \
+     external/tremor/Tremor \
+     frameworks/base/core/jni \
+diff --git a/media/jni/android_media_MediaMetadataRetriever.cpp b/media/jni/android_media_MediaMetadataRetriever.cpp
+index 297dadf..fed13c7 100644
+--- a/media/jni/android_media_MediaMetadataRetriever.cpp
++++ b/media/jni/android_media_MediaMetadataRetriever.cpp
+@@ -24,6 +24,7 @@
+ #include <core/SkBitmap.h>
+ #include <media/mediametadataretriever.h>
+ #include <private/media/VideoFrame.h>
++#include <actal_posix_dev.h>
+ 
+ #include "jni.h"
+ #include "JNIHelp.h"
+@@ -345,7 +346,7 @@ static jobject android_media_MediaMetadataRetriever_extractMetadata(JNIEnv *env,
+         return NULL;
+     }
+     const char* value = retriever->extractMetadata(keyCode);
+-    if (!value) {
++    if (!value || (actal_check_utf8(value, strlen(value)) != 0)) {
+         ALOGV("extractMetadata: Metadata is not found");
+         return NULL;
+     }
+diff --git a/media/jni/android_media_MediaPlayer.cpp b/media/jni/android_media_MediaPlayer.cpp
+index ad536f2..df51bd7 100644
+--- a/media/jni/android_media_MediaPlayer.cpp
++++ b/media/jni/android_media_MediaPlayer.cpp
+@@ -471,6 +471,7 @@ android_media_MediaPlayer_reset(JNIEnv *env, jobject thiz)
+         return;
+     }
+     process_media_player_call( env, thiz, mp->reset(), NULL, NULL );
++    usleep(1*1000);
+ }
+ 
+ static void
+diff --git a/policy/src/com/android/internal/policy/impl/keyguard/KeyguardViewManager.java b/policy/src/com/android/internal/policy/impl/keyguard/KeyguardViewManager.java
+index 182c74d..7c495b5 100644
+--- a/policy/src/com/android/internal/policy/impl/keyguard/KeyguardViewManager.java
++++ b/policy/src/com/android/internal/policy/impl/keyguard/KeyguardViewManager.java
+@@ -126,7 +126,7 @@ public class KeyguardViewManager {
+     private boolean shouldEnableScreenRotation() {
+         Resources res = mContext.getResources();
+         boolean enableLockScreenRotation = Settings.System.getInt(mContext.getContentResolver(),
+-                Settings.System.LOCKSCREEN_ROTATION, 0) != 0;
++                Settings.System.LOCKSCREEN_ROTATION, 1) != 0;
+         boolean enableAccelerometerRotation = Settings.System.getInt(mContext.getContentResolver(),
+                 Settings.System.ACCELEROMETER_ROTATION, 1) != 0;
+         return SystemProperties.getBoolean("lockscreen.rot_override",false)
+diff --git a/services/java/Android.mk b/services/java/Android.mk
+index 95b28d9..a1badcb 100644
+--- a/services/java/Android.mk
++++ b/services/java/Android.mk
+@@ -11,7 +11,7 @@ LOCAL_SRC_FILES := \
+ 
+ LOCAL_MODULE:= services
+ 
+-LOCAL_JAVA_LIBRARIES := android.policy telephony-common
++LOCAL_JAVA_LIBRARIES := android.policy telephony-common actions
+ 
+ include $(BUILD_JAVA_LIBRARY)
+ 
+diff --git a/services/java/com/android/server/BluetoothManagerService.java b/services/java/com/android/server/BluetoothManagerService.java
+index 5a2088c..c717afb 100644
+--- a/services/java/com/android/server/BluetoothManagerService.java
++++ b/services/java/com/android/server/BluetoothManagerService.java
+@@ -36,6 +36,7 @@ import android.os.HandlerThread;
+ import android.os.IBinder;
+ import android.os.Looper;
+ import android.os.Message;
++import android.os.PowerManager;
+ import android.os.Process;
+ import android.os.RemoteCallbackList;
+ import android.os.RemoteException;
+@@ -89,6 +90,8 @@ class BluetoothManagerService extends IBluetoothManager.Stub {
+ 
+     private final Context mContext;
+ 
++    private PowerManager.WakeLock mWakeLock;
++
+     // Locks are not provided for mName and mAddress.
+     // They are accessed in handler or broadcast receiver, same thread context.
+     private String mAddress;
+@@ -198,6 +201,8 @@ class BluetoothManagerService extends IBluetoothManager.Stub {
+         mAddress = null;
+         mName = null;
+         mContentResolver = context.getContentResolver();
++	PowerManager powerManager = (PowerManager)mContext.getSystemService(Context.POWER_SERVICE);
++	mWakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, TAG);
+         mCallbacks = new RemoteCallbackList<IBluetoothManagerCallback>();
+         mStateChangeCallbacks = new RemoteCallbackList<IBluetoothStateChangeCallback>();
+         IntentFilter filter = new IntentFilter(Intent.ACTION_BOOT_COMPLETED);
+@@ -298,6 +303,18 @@ class BluetoothManagerService extends IBluetoothManager.Stub {
+         }
+     }
+ 
++    private void acquireWakeLock() {
++        if (DBG) Log.d(TAG,"acquireWakeLockk");
++        if (mWakeLock != null && !mWakeLock.isHeld())
++            mWakeLock.acquire();
++    }
++	
++    private void releaseWakeLock() {
++        if (DBG) Log.d(TAG,"releaseWakeLock");
++        if (mWakeLock != null && mWakeLock.isHeld())
++            mWakeLock.release();
++    }
++
+     public IBluetooth registerAdapter(IBluetoothManagerCallback callback){
+         Message msg = mHandler.obtainMessage(MESSAGE_REGISTER_ADAPTER);
+         msg.obj = callback;
+@@ -1055,6 +1072,14 @@ class BluetoothManagerService extends IBluetoothManager.Stub {
+                 }
+             }
+ 
++            //when turning on bt, acquire wake lock
++            if(newState == BluetoothAdapter.STATE_TURNING_ON)
++                acquireWakeLock();
++                
++            //when bt is off, release wake lock
++            if(newState == BluetoothAdapter.STATE_OFF)
++                releaseWakeLock();
++
+             //Send broadcast message to everyone else
+             Intent intent = new Intent(BluetoothAdapter.ACTION_STATE_CHANGED);
+             intent.putExtra(BluetoothAdapter.EXTRA_PREVIOUS_STATE, prevState);
+diff --git a/services/java/com/android/server/SystemServer.java b/services/java/com/android/server/SystemServer.java
+index 1b2b65d..80e8e39 100644
+--- a/services/java/com/android/server/SystemServer.java
++++ b/services/java/com/android/server/SystemServer.java
+@@ -80,6 +80,26 @@ import java.util.TimerTask;
+ import com.stericsson.hardware.fm.FmReceiverService;
+ import com.stericsson.hardware.fm.FmTransmitterService;
+ 
++import android.os.IBinder;
++import java.lang.reflect.Constructor;
++/** import com.actions.server.DisplayService; */
++final class ActionServiceManager {
++    private static final String POLICY_IMPL_CLASS_NAME =
++        "com.actions.server.DisplayService";
++    public static IBinder getDisplayManagerService(Context context){
++        // Pull in the actual implementation of the policy at run-time
++        try {
++            Class policyClass = Class.forName(POLICY_IMPL_CLASS_NAME);
++               Constructor cons = policyClass.getDeclaredConstructor(Context.class);
++                       return (IBinder)cons.newInstance(context);              
++                       
++        } catch (Exception ex) {
++            throw new RuntimeException(
++                    POLICY_IMPL_CLASS_NAME + " could not be loaded", ex);
++        } 
++    }
++}
++
+ class ServerThread extends Thread {
+     private static final String TAG = "SystemServer";
+     private static final String ENCRYPTING_STATE = "trigger_restart_min_framework";
+@@ -780,6 +800,14 @@ class ServerThread extends Thread {
+                 reportWtf("starting SamplingProfiler Service", e);
+             }
+ 
++             try {
++                Slog.i(TAG, "DisplayManager Service");
++                IBinder b=ActionServiceManager.getDisplayManagerService(context);
++                               ServiceManager.addService("actions.display",b);
++            } catch (Throwable e) {
++                Slog.e(TAG, "Failure starting DisplayManager Service", e);
++            }
++
+             try {
+                 Slog.i(TAG, "NetworkTimeUpdateService");
+                 networkTimeUpdater = new NetworkTimeUpdateService(context);
+diff --git a/services/java/com/android/server/WifiService.java b/services/java/com/android/server/WifiService.java
+index 84efe65..393f58d 100644
+--- a/services/java/com/android/server/WifiService.java
++++ b/services/java/com/android/server/WifiService.java
+@@ -143,7 +143,7 @@ public class WifiService extends IWifiManager.Stub {
+      * being enabled but not active exceeds the battery drain caused by
+      * re-establishing a connection to the mobile data network.
+      */
+-    private static final long DEFAULT_IDLE_MS = 15 * 60 * 1000; /* 15 minutes */
++    private static final long DEFAULT_IDLE_MS = 1 * 30 * 1000; /* 30 seconds */
+ 
+     private static final String ACTION_DEVICE_IDLE =
+             "com.android.server.WifiManager.action.DEVICE_IDLE";
+@@ -1058,6 +1058,8 @@ public class WifiService extends IWifiManager.Stub {
+                     Slog.d(TAG, "ACTION_SCREEN_ON");
+                 }
+                 mAlarmManager.cancel(mIdleIntent);
++		mWifiStateMachine.releaseShutdownLock();
++		mWifiStateMachine.releaseSodLock();
+                 mScreenOff = false;
+                 evaluateTrafficStatsPolling();
+                 setDeviceIdleAndUpdateWifi(false);
+@@ -1074,14 +1076,18 @@ public class WifiService extends IWifiManager.Stub {
+                  * or plugged in to AC).
+                  */
+                 if (!shouldWifiStayAwake(stayAwakeConditions, mPluggedType)) {
++		    mWifiStateMachine.acquireShutdownLock();
+                     //Delayed shutdown if wifi is connected
+-                    if (mNetworkInfo.getDetailedState() == DetailedState.CONNECTED) {
++                    //if (mNetworkInfo.getDetailedState() == DetailedState.CONNECTED) {
++		    if (true) {
+                         if (DBG) Slog.d(TAG, "setting ACTION_DEVICE_IDLE: " + idleMillis + " ms");
+                         mAlarmManager.set(AlarmManager.RTC_WAKEUP, System.currentTimeMillis()
+                                 + idleMillis, mIdleIntent);
+                     } else {
+                         setDeviceIdleAndUpdateWifi(true);
+                     }
++		} else {
++		    mWifiStateMachine.acquireShutdownLock();
+                 }
+             } else if (action.equals(ACTION_DEVICE_IDLE)) {
+                 setDeviceIdleAndUpdateWifi(true);
+diff --git a/telephony/java/android/telephony/TelephonyManager.java b/telephony/java/android/telephony/TelephonyManager.java
+index 0e8f528..86c2cb9 100644
+--- a/telephony/java/android/telephony/TelephonyManager.java
++++ b/telephony/java/android/telephony/TelephonyManager.java
+@@ -24,6 +24,7 @@ import android.os.RemoteException;
+ import android.os.ServiceManager;
+ import android.os.SystemProperties;
+ import android.util.Log;
++import android.provider.Settings;
+ 
+ import com.android.internal.telephony.IPhoneSubInfo;
+ import com.android.internal.telephony.ITelephony;
+@@ -192,6 +193,31 @@ public class TelephonyManager {
+         }
+     }
+ 
++     /**
++     * Returns the ANDROID_ID as fake device id
++     */
++    private String getFakeDeviceId(){
++        String id = Settings.Secure.getString(sContext.getContentResolver(), Settings.Secure.ANDROID_ID);
++        if (id != null && id.length() > 0) {
++            StringBuilder strBuilder = new StringBuilder();
++            int offset = 0, radix = 16;
++            long result = 0, length = id.length();
++            while (offset < length) {
++                int digit = Character.digit(id.charAt(offset++), radix);
++                strBuilder.append(digit);
++            }
++
++            String strID = strBuilder.toString();
++            if (strID.length() > 15) {
++                String  IMEI = strID.substring(0, 15);
++                //Log.d(TAG, "getDeviceId android id:" + strID + ", device id:" + IMEI);
++                return IMEI;
++            }
++        }
++        return "012345678901237";
++
++    }
++
+     /**
+      * Returns the unique device ID, for example, the IMEI for GSM and the MEID
+      * or ESN for CDMA phones. Return null if device ID is not available.
+@@ -200,12 +226,23 @@ public class TelephonyManager {
+      *   {@link android.Manifest.permission#READ_PHONE_STATE READ_PHONE_STATE}
+      */
+     public String getDeviceId() {
+-        try {
++        /*try {
+             return getSubscriberInfo().getDeviceId();
+         } catch (RemoteException ex) {
+             return null;
+         } catch (NullPointerException ex) {
+             return null;
++        }*/
++        try {
++            String str = getSubscriberInfo().getDeviceId();
++            if(str != null)
++                return str;
++            else
++                return getFakeDeviceId();
++        } catch (RemoteException ex) {
++            return getFakeDeviceId();
++        } catch (NullPointerException ex) {
++            return getFakeDeviceId();
+         }
+     }
+ 
+diff --git a/wifi/java/android/net/wifi/WifiStateMachine.java b/wifi/java/android/net/wifi/WifiStateMachine.java
+index dc4d757..a64214e 100644
+--- a/wifi/java/android/net/wifi/WifiStateMachine.java
++++ b/wifi/java/android/net/wifi/WifiStateMachine.java
+@@ -196,6 +196,10 @@ public class WifiStateMachine extends StateMachine {
+ 
+     // Wakelock held during wifi start/stop and driver load/unload
+     private PowerManager.WakeLock mWakeLock;
++    private PowerManager.WakeLock mShutdownLock;
++    private PowerManager.WakeLock mHungLock;
++    private PowerManager.WakeLock mSodLock;
++    private PowerManager mPowerManager;
+ 
+     private Context mContext;
+ 
+@@ -693,10 +697,13 @@ public class WifiStateMachine extends StateMachine {
+ 
+         mScanResultCache = new LruCache<String, ScanResult>(SCAN_RESULT_CACHE_SIZE);
+ 
+-        PowerManager powerManager = (PowerManager)mContext.getSystemService(Context.POWER_SERVICE);
+-        mWakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, TAG);
++	mPowerManager = (PowerManager)mContext.getSystemService(Context.POWER_SERVICE);
++	mWakeLock = mPowerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, TAG);
++	mShutdownLock = mPowerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "WifiShutdownLock");
++	mHungLock = mPowerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "WifiHungLock");
++	mSodLock = mPowerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "WifiSodLock");
+ 
+-        mSuspendWakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "WifiSuspend");
++        mSuspendWakeLock = mPowerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "WifiSuspend");
+         mSuspendWakeLock.setReferenceCounted(false);
+ 
+         addState(mDefaultState);
+@@ -764,6 +771,50 @@ public class WifiStateMachine extends StateMachine {
+                 SCAN_ACTIVE : SCAN_PASSIVE, 0));
+     }
+ 
++	public void acquireShutdownLock() {
++		loge("lin : acquireShutdownLock");
++		if (!mShutdownLock.isHeld())
++			mShutdownLock.acquire();
++	}
++	
++	public void releaseShutdownLock() {
++		loge("lin : releaseShutdownLock");
++		if (mShutdownLock.isHeld())
++			mShutdownLock.release();
++	}
++
++	private void acquireHungLock() {
++		loge("lin : acquireHungLock");
++		if (!mHungLock.isHeld())
++			mHungLock.acquire();
++	}
++	
++	private void releaseHungLock() {
++		loge("lin : releaseHungLock");
++		if (mHungLock.isHeld())
++			mHungLock.release();
++	}
++
++	private void acquireSodLock() {
++		loge("lin : acquireSodLock");
++		if (!mSodLock.isHeld())
++			mSodLock.acquire();
++	}
++	
++	public void releaseSodLock() {
++		loge("lin : releaseSodLock");
++		if (mSodLock.isHeld())
++			mSodLock.release();
++	}
++
++	private boolean isScreenOn() {
++		if (mPowerManager != null) {
++		    return mPowerManager.isScreenOn();
++		}
++        
++		return true;
++	}
++
+     /**
+      * TODO: doc
+      */
+@@ -2041,8 +2092,14 @@ public class WifiStateMachine extends StateMachine {
+                     }
+                     break;
+                 case WifiMonitor.DRIVER_HUNG_EVENT:
+-                    setWifiEnabled(false);
+-                    setWifiEnabled(true);
++		    if (isScreenOn()) {
++			acquireHungLock();
++			setWifiEnabled(false);
++			setWifiEnabled(true);
++			releaseHungLock();
++		    } else {
++			setWifiEnabled(false);
++		    }
+                     break;
+                 case WifiManager.CONNECT_NETWORK:
+                     replyToMessage(message, WifiManager.CONNECT_NETWORK_FAILED,
+@@ -2152,6 +2209,7 @@ public class WifiStateMachine extends StateMachine {
+                     }
+ 
+                     if(mWifiNative.loadDriver()) {
++			if (!isScreenOn()) acquireSodLock();
+                         if (DBG) log("Driver load successful");
+                         sendMessage(CMD_LOAD_DRIVER_SUCCESS);
+                     } else {
+@@ -2276,6 +2334,7 @@ public class WifiStateMachine extends StateMachine {
+                     if (DBG) log(getName() + message.toString() + "\n");
+                     mWakeLock.acquire();
+                     if(mWifiNative.unloadDriver()) {
++			releaseSodLock();
+                         if (DBG) log("Driver unload successful");
+                         sendMessage(CMD_UNLOAD_DRIVER_SUCCESS);
+ 
+@@ -2511,8 +2570,13 @@ public class WifiStateMachine extends StateMachine {
+                     break;
+                 case WifiMonitor.SUP_DISCONNECTION_EVENT:  /* Supplicant connection lost */
+                     loge("Connection lost, restart supplicant");
++                    acquireHungLock();
+                     mWifiNative.killSupplicant(mP2pSupported);
+                     mWifiNative.closeSupplicantConnection();
++                    if (isScreenOn()) {
++                        setWifiEnabled(false);
++                        setWifiEnabled(true);
++                    }  
+                     mNetworkInfo.setIsAvailable(false);
+                     handleNetworkDisconnect();
+                     sendSupplicantConnectionChangedBroadcast(false);
+@@ -2523,6 +2587,7 @@ public class WifiStateMachine extends StateMachine {
+                         transitionTo(mDriverLoadedState);
+                     }
+                     sendMessageDelayed(CMD_START_SUPPLICANT, SUPPLICANT_RESTART_INTERVAL_MSECS);
++                    releaseHungLock();
+                     break;
+                 case WifiMonitor.SCAN_RESULTS_EVENT:
+                     setScanResults(mWifiNative.scanResults());
+@@ -2896,7 +2961,7 @@ public class WifiStateMachine extends StateMachine {
+                         sendMessage(obtainMessage(CMD_DELAYED_STOP_DRIVER, mDelayedStopCounter, 0));
+                     } else {
+                         /* send regular delayed shut down */
+-                        Intent driverStopIntent = new Intent(ACTION_DELAYED_DRIVER_STOP, null);
++                        /*Intent driverStopIntent = new Intent(ACTION_DELAYED_DRIVER_STOP, null);
+                         driverStopIntent.putExtra(DELAYED_STOP_COUNTER, mDelayedStopCounter);
+                         mDriverStopIntent = PendingIntent.getBroadcast(mContext,
+                                 DRIVER_STOP_REQUEST, driverStopIntent,
+@@ -2904,6 +2969,9 @@ public class WifiStateMachine extends StateMachine {
+ 
+                         mAlarmManager.set(AlarmManager.RTC_WAKEUP, System.currentTimeMillis()
+                                 + mDriverStopDelayMs, mDriverStopIntent);
++                        mAlarmManager.set(AlarmManager.RTC_WAKEUP, System.currentTimeMillis()
++                                + 0, mDriverStopIntent);*/
++			sendMessage(obtainMessage(CMD_DELAYED_STOP_DRIVER, mDelayedStopCounter, 0));
+                     }
+                     break;
+                 case CMD_START_DRIVER:
+@@ -2929,6 +2997,9 @@ public class WifiStateMachine extends StateMachine {
+                     } else {
+                         transitionTo(mDriverStoppingState);
+                     }
++		    setWifiEnabled(false);
++		    releaseShutdownLock();
++		    releaseSodLock();
+                     break;
+                 case CMD_START_PACKET_FILTERING:
+                     if (message.arg1 == MULTICAST_V6) {
+@@ -3578,7 +3649,7 @@ public class WifiStateMachine extends StateMachine {
+         public void exit() {
+             /* Request a CS wakelock during transition to mobile */
+             checkAndSetConnectivityInstance();
+-            mCm.requestNetworkTransitionWakelock(TAG);
++            //mCm.requestNetworkTransitionWakelock(TAG);
+         }
+     }
+ 
+-- 
+1.8.1.5
+

@@ -1,0 +1,1559 @@
+From b81ea539a603d350f8cd8b1d96debaf456443a6e Mon Sep 17 00:00:00 2001
+From: Alan Marchesan <justcavalli@gmail.com>
+Date: Thu, 3 Oct 2013 06:43:36 +0200
+Subject: [PATCH] gs702a: initial merge of Actions code by ChristianTroy
+
+---
+ include/media/openmax/ACT_OMX_Common_V1_2__V1_1.h  | 196 ++++++++
+ include/media/openmax/ACT_OMX_IVCommon.h           | 525 +++++++++++++++++++++
+ include/media/openmax/ACT_OMX_Index.h              |  61 +++
+ include/media/openmax/OMX_Core.h                   |   2 +
+ include/media/openmax/OMX_RoleNames.h              | 141 ++++++
+ include/media/openmax/video_mediadata.h            |  40 ++
+ include/ui/FramebufferNativeWindow.h               |   3 +
+ libs/ui/FramebufferNativeWindow.cpp                |   7 +
+ opengl/libs/EGL/eglApi.cpp                         |   2 +-
+ services/surfaceflinger/Android.mk                 |   5 +-
+ services/surfaceflinger/DisplayDevice.cpp          |   3 +-
+ services/surfaceflinger/DisplayDevice.h            |   2 +
+ .../surfaceflinger/DisplayHardware/HWComposer.cpp  | 179 ++++++-
+ .../surfaceflinger/DisplayHardware/HWComposer.h    |   2 +
+ services/surfaceflinger/Layer.cpp                  |  23 +-
+ services/surfaceflinger/Layer.h                    |   1 +
+ services/surfaceflinger/LayerDim.cpp               |  27 ++
+ services/surfaceflinger/LayerDim.h                 |   4 +
+ services/surfaceflinger/SurfaceFlinger.cpp         |  20 +-
+ services/surfaceflinger/SurfaceFlinger.h           |   2 +
+ 20 files changed, 1224 insertions(+), 21 deletions(-)
+ create mode 100755 include/media/openmax/ACT_OMX_Common_V1_2__V1_1.h
+ create mode 100755 include/media/openmax/ACT_OMX_IVCommon.h
+ create mode 100755 include/media/openmax/ACT_OMX_Index.h
+ create mode 100755 include/media/openmax/OMX_RoleNames.h
+ create mode 100755 include/media/openmax/video_mediadata.h
+
+diff --git a/include/media/openmax/ACT_OMX_Common_V1_2__V1_1.h b/include/media/openmax/ACT_OMX_Common_V1_2__V1_1.h
+new file mode 100755
+index 0000000..063bad9
+--- /dev/null
++++ b/include/media/openmax/ACT_OMX_Common_V1_2__V1_1.h
+@@ -0,0 +1,196 @@
++#ifndef __OMX_Common_V1_2__V1_1_H__
++#define __OMX_Common_V1_2__V1_1_H__
++#include "OMX_Types.h"
++#include "OMX_IVCommon.h"
++#define OMX_IndexConfigCommonPortCapturing (0x1000000 + 25)     /**< reference: OMX_CONFIG_PORTBOOLEANTYPE */
++#define OMX_IndexConfigFlickerRejection        (0x5000000 + 8)/**< reference: OMX_CONFIG_FLICKERREJECTIONTYPE */
++#define OMX_IndexConfigImageHistogram          (0x5000000 + 9)/**< reference: OMX_IMAGE_HISTOGRAMTYPE */
++#define OMX_IndexConfigImageHistogramData      (0x5000000 + 10)/**< reference: OMX_IMAGE_HISTOGRAMDATATYPE */
++#define OMX_IndexConfigImageHistogramInfo      (0x5000000 + 11)/**< reference: OMX_IMAGE_HISTOGRAMINFOTYPE */
++#define OMX_IndexConfigImageCaptureStarted     (0x5000000 + 12)/**< reference: OMX_PARAM_U32TYPE */
++#define OMX_IndexConfigImageCaptureEnded       (0x5000000 + 13)/**< reference: OMX_PARAM_U32TYPE */
++    
++    
++#define OMX_IndexConfigSharpness 								(0x7000000 + 35)
++#define OMX_IndexConfigCommonExtDigitalZoom 		(0x7000000 + 36)    /**< reference: OMX_CONFIG_ZOOMFACTORTYPE */
++#define OMX_IndexConfigCommonExtOpticalZoom 		(0x7000000 + 37)    /**< reference: OMX_CONFIG_ZOOMFACTORTYPE */
++#define OMX_IndexConfigCommonCenterFieldOfView 	(0x7000000 + 38) /**< reference: OMX_CONFIG_POINTTYPE */
++#define OMX_IndexConfigImageExposureLock 				(0x7000000 + 39)      /**< reference: OMX_IMAGE_CONFIG_LOCKTYPE */
++#define OMX_IndexConfigImageWhiteBalanceLock 		(0x7000000 + 40)   /**< reference: OMX_IMAGE_CONFIG_LOCKTYPE */
++#define OMX_IndexConfigImageFocusLock 					(0x7000000 + 41)          /**< reference: OMX_IMAGE_CONFIG_LOCKTYPE */
++#define OMX_IndexConfigCommonFocusRange 				(0x7000000 + 42)        /**< reference: OMX_CONFIG_FOCUSRANGETYPE */
++#define OMX_IndexConfigImageFlashStatus 				(0x7000000 + 43)        /**< reference: OMX_FLASHSTATUSTYPE */
++#define OMX_IndexConfigCommonExtCaptureMode 		(0x7000000 + 44)   /**< reference: OMX_CONFIG_EXTCAPTUREMODETYPE */
++#define OMX_IndexConfigCommonNDFilterControl 		(0x7000000 + 45)   /**< reference: OMX_CONFIG_NDFILTERCONTROLTYPE */
++#define OMX_IndexConfigCommonAFAssistantLight 	(0x7000000 + 46)  /**< reference: OMX_CONFIG_AFASSISTANTLIGHTTYPE */
++#define OMX_IndexConfigCommonFocusRegionStatus 	(0x7000000 + 47) /**< reference: OMX_CONFIG_FOCUSREGIONSTATUSTYPE */
++#define OMX_IndexConfigCommonFocusRegionControl (0x7000000 + 48)/**< reference: OMX_CONFIG_FOCUSREGIONCONTROLTYPE */
++#define OMX_IndexParamInterlaceFormat 					(0x7000000 + 49)          /**< reference: OMX_INTERLACEFORMATTYPE */
++#define OMX_IndexConfigDeInterlace 							(0x7000000 + 50)             /**< reference: OMX_DEINTERLACETYPE */
++#define OMX_IndexConfigStreamInterlaceFormats 	(0x7000000 + 51)  /**< reference: OMX_STREAMINTERLACEFORMATTYPE */
++
++enum{
++	OMX_COLOR_Format32bitABGR8888 = 44,
++	OMX_COLOR_FormatYVU420Planar,
++	OMX_COLOR_FormatYVU420PackedPlanar,
++	OMX_COLOR_FormatYVU420SemiPlanar,
++	OMX_COLOR_FormatYVU420PackedSemiPlanar,
++	OMX_COLOR_FormatYVU422Planar,
++	OMX_COLOR_FormatYVU422PackedPlanar,
++	OMX_COLOR_FormatYVU422SemiPlanar,
++	OMX_COLOR_FormatYVU422PackedSemiPlanar,
++	OMX_COLOR_Format8bitBGR233,
++	OMX_COLOR_Format12bitBGR444,
++	OMX_COLOR_Format16bitBGRA4444,
++	OMX_COLOR_Format16bitBGRA5551,
++	OMX_COLOR_Format18bitBGRA5661,
++	OMX_COLOR_Format19bitBGRA6661,
++	OMX_COLOR_Format24bitBGRA7881,
++	OMX_COLOR_Format25bitBGRA8881,
++	OMX_COLOR_Format24BitBGRA6666,
++	OMX_COLOR_Format24BitRGBA6666,
++};
++
++typedef enum OMX_FLICKERREJECTIONTYPE {
++    OMX_FlickerRejectionOff = 0,
++    OMX_FlickerRejectionAuto,
++    OMX_FlickerRejection50,
++    OMX_FlickerRejection60,
++    OMX_FlickerRejectionKhronosExtensions = 0x6F000000, /**< Reserved region for introducing Khronos Standard Extensions */ 
++    OMX_FlickerRejectionVendorStartUnused = 0x7F000000, /**< Reserved region for introducing Vendor Extensions */
++    OMX_FlickerRejectionMax = 0x7FFFFFFF
++}OMX_FLICKERREJECTIONTYPE;
++
++typedef struct OMX_CONFIG_FLICKERREJECTIONTYPE{
++    OMX_U32 nSize;
++    OMX_VERSIONTYPE nVersion;
++    OMX_U32 nPortIndex;
++    OMX_FLICKERREJECTIONTYPE eFlickerRejection;
++} OMX_CONFIG_FLICKERREJECTIONTYPE;
++
++typedef struct OMX_SHARPNESSTYPE{
++    OMX_U32 nSize;
++    OMX_VERSIONTYPE nVersion;
++    OMX_U32 nPortIndex;
++    OMX_S32 nSharpness;
++} OMX_SHARPNESSTYPE;
++
++typedef struct OMX_CONFIG_ZOOMFACTORTYPE { 
++    OMX_U32 nSize; 
++    OMX_VERSIONTYPE nVersion; 
++    OMX_U32 nPortIndex; 
++    OMX_BU32 xZoomFactor; 
++}OMX_CONFIG_ZOOMFACTORTYPE;
++
++typedef enum OMX_IMAGE_LOCKTYPE {
++    OMX_IMAGE_LockOff = 0, 
++    OMX_IMAGE_LockImmediate,
++    OMX_IMAGE_LockAtCapture,
++    OMX_IMAGE_LockKhronosExtensions = 0x6F000000, /**< Reserved region for introducing Khronos Standard Extensions */ 
++    OMX_IMAGE_LockVendorStartUnused = 0x7F000000, /**< Reserved region for introducing Vendor Extensions */
++    OMX_IMAGE_LockMax = 0x7FFFFFFF
++} OMX_IMAGE_LOCKTYPE;
++
++typedef struct OMX_IMAGE_CONFIG_LOCKTYPE {
++    OMX_U32 nSize;
++    OMX_VERSIONTYPE nVersion;
++    OMX_U32 nPortIndex;
++    OMX_IMAGE_LOCKTYPE eImageLock;
++} OMX_IMAGE_CONFIG_LOCKTYPE;
++
++typedef enum OMX_FOCUSRANGETYPE {
++    OMX_FocusRangeAuto = 0, 
++    OMX_FocusRangeHyperfocal,
++    OMX_FocusRangeNormal,
++    OMX_FocusRangeSuperMacro,
++    OMX_FocusRangeMacro,
++    OMX_FocusRangeInfinity,
++    OMX_FocusRangeKhronosExtensions = 0x6F000000, /**< Reserved region for introducing Khronos Standard Extensions */ 
++    OMX_FocusRangeVendorStartUnused = 0x7F000000, /**< Reserved region for introducing Vendor Extensions */
++    OMX_FocusRangeMax = 0x7FFFFFFF
++} OMX_FOCUSRANGETYPE;
++
++typedef struct OMX_CONFIG_FOCUSRANGETYPE {
++    OMX_U32 nSize;
++    OMX_VERSIONTYPE nVersion;
++    OMX_U32 nPortIndex;
++    OMX_FOCUSRANGETYPE eFocusRange;
++} OMX_CONFIG_FOCUSRANGETYPE;
++
++typedef enum OMX_IMAGE_FLASHSTATUSTYPE
++{
++    OMX_IMAGE_FlashUnknown 	= 0,
++    OMX_IMAGE_FlashOff,
++    OMX_IMAGE_FlashCharging,
++    OMX_IMAGE_FlashReady,
++    OMX_IMAGE_FlashNotAvailable,
++    OMX_IMAGE_FlashInsufficientCharge,
++    OMX_IMAGE_FlashKhronosExtensions = 0x6F000000, /**< Reserved region for introducing Khronos Standard Extensions */ 
++    OMX_IMAGE_FlashVendorStartUnused = 0x7F000000, /**< Reserved region for introducing Vendor Extensions */
++    OMX_IMAGE_FlashMax = 0x7FFFFFFF
++} OMX_IMAGE_FLASHSTATUSTYPE;
++              
++typedef struct OMX_IMAGE_CONFIG_FLASHSTATUSTYPE { 
++    OMX_U32 nSize;
++    OMX_VERSIONTYPE nVersion;
++    OMX_IMAGE_FLASHSTATUSTYPE eFlashStatus;
++} OMX_IMAGE_CONFIG_FLASHSTATUSTYPE;
++
++typedef struct OMX_CONFIG_EXTCAPTUREMODETYPE {
++    OMX_U32 nSize;
++    OMX_VERSIONTYPE nVersion;
++    OMX_U32 nPortIndex;
++    OMX_U32 nFrameBefore;
++    OMX_BOOL bPrepareCapture;
++} OMX_CONFIG_EXTCAPTUREMODETYPE;
++
++typedef struct OMX_FROITYPE {
++    OMX_S32 nRectX;
++    OMX_S32 nRectY;
++    OMX_S32 nRectWidth;
++    OMX_S32 nRectHeight;
++    OMX_S32 xFocusDistance;
++    OMX_FOCUSSTATUSTYPE eFocusStatus;
++} OMX_FROITYPE;
++
++typedef struct OMX_CONFIG_FOCUSREGIONSTATUSTYPE {
++    OMX_U32 nSize;
++    OMX_VERSIONTYPE nVersion;
++    OMX_BOOL bFocused;
++    OMX_U32 nMaxFAreas;
++    OMX_U32 nFAreas;
++    OMX_FROITYPE sFROIs[1];
++} OMX_CONFIG_FOCUSREGIONSTATUSTYPE;
++
++typedef struct OMX_MANUALFOCUSRECTTYPE {
++    OMX_S32 nRectX;
++    OMX_S32 nRectY;
++    OMX_S32 nRectWidth;
++    OMX_S32 nRectHeight;
++} OMX_MANUALFOCUSRECTTYPE;
++
++typedef enum OMX_FOCUSREGIONCONTROLTYPE {
++    OMX_FocusRegionControlAuto = 0,
++    OMX_FocusRegionControlManual,
++    OMX_FocusRegionControlFacePriority,
++    OMX_FocusRegionControlObjectPriority,
++    OMX_FocusRegionControlKhronosExtensions = 0x6F000000, /**< Reserved region for introducing Khronos Standard Extensions */
++    OMX_FocusRegionControlVendorStartUnused = 0x7F000000, /**< Reserved region for introducing Vendor Extensions */
++    OMX_FocusRegionControlMax = 0x7FFFFFFF
++} OMX_FOCUSREGIONCONTROLTYPE;
++
++typedef struct OMX_CONFIG_FOCUSREGIONCONTROLTYPE {
++    OMX_U32 nSize;
++    OMX_VERSIONTYPE nVersion;
++    OMX_U32 nFAreas;
++    OMX_FOCUSREGIONCONTROLTYPE eFocusRegionsControl;
++    OMX_MANUALFOCUSRECTTYPE sManualFRegions[1];
++} OMX_CONFIG_FOCUSREGIONCONTROLTYPE;
++
++typedef struct OMX_CONFIG_PORTBOOLEANTYPE{
++    OMX_U32 nSize;
++    OMX_VERSIONTYPE nVersion;
++    OMX_U32 nPortIndex;
++    OMX_BOOL bEnabled;
++} OMX_CONFIG_PORTBOOLEANTYPE;
++#endif
+diff --git a/include/media/openmax/ACT_OMX_IVCommon.h b/include/media/openmax/ACT_OMX_IVCommon.h
+new file mode 100755
+index 0000000..80e9676
+--- /dev/null
++++ b/include/media/openmax/ACT_OMX_IVCommon.h
+@@ -0,0 +1,525 @@
++#ifndef OMX_ACT_IVCommon_H
++#define OMX_ACT_IVCommon_H
++
++#ifdef __cplusplus
++extern "C" {
++#endif /* __cplusplus */
++#ifndef _OPENMAX_V1_2_
++#include "ACT_OMX_Common_V1_2__V1_1.h"
++#endif
++#include <OMX_Types.h>
++#include <OMX_IVCommon.h>
++#include <OMX_Image.h>
++
++
++/**
++ *processing level type
++ *  Simultaneously lock focus, white balance and exposure (and relevant other settings).
++ *
++ * STRUCT MEMBERS:
++ *  nSize        : Size of the structure in bytes
++ *  nVersion     : OMX specification version information
++ *  nPortIndex   : Port that this structure applies to
++ *  nLevel :
++ *               nLevel hinting processing amount. Range of values is -100 to 100.
++ *               0 causes no change to the image.  Increased values cause increased processing to occur, with 100 applying maximum processing.
++ *               Negative values have the opposite effect of positive values.
++ *  bAuto:
++ *		sets if the processing should be applied according to input data.
++ 		It is allowed to combine the hint level with the auto setting,
++ *		i.e. to give a bias to the automatic setting. When set to false, the processing should not take input data into account.
++ */
++
++typedef struct OMX_IMAGE_CONFIG_PROCESSINGLEVELTYPE {
++		OMX_U32 nSize;
++		OMX_VERSIONTYPE nVersion;
++		OMX_U32 nPortIndex;
++		OMX_S32 nLevel;
++		OMX_BOOL bAuto;
++} OMX_IMAGE_CONFIG_PROCESSINGLEVELTYPE;
++
++
++
++/**
++ * Structure used to configure current OMX_ACT_CONFIG_SHAREDBUFFER
++ *
++ * STRUCT MEMBERS:
++ * nSize            : Size of the structure in bytes
++ * nVersion         : OMX specification version information
++ * nPortIndex       : Port that this structure applies to
++ * nSharedBuffSize  : Size of the pSharedBuff in bytes
++ * pSharedBuff      : Pointer to a buffer
++ */
++typedef struct OMX_ACT_CONFIG_SHAREDBUFFER {
++	OMX_U32 nSize;
++	OMX_VERSIONTYPE nVersion;
++	OMX_U32 nPortIndex;
++	OMX_U32 nSharedBuffSize;
++	OMX_U8* pSharedBuff;
++} OMX_ACT_CONFIG_SHAREDBUFFER;
++
++/**
++ * Structure used to configure current OMX_TI_VARFPSTYPE
++ *
++ * @param nVarFPSMin    Number of the smallest FPS supported.
++ * @param nVarFPSMax    Number of the biggest FPS supported, be equal to nVarFPSMin
++ */
++typedef struct OMX_ACT_VARFPSTYPE {
++    OMX_U32                 nVarFPSMin;
++    OMX_U32                 nVarFPSMax;
++} OMX_ACT_VARFPSTYPE;
++
++/**
++ * Structure used to configure current OMX_TI_VARFPSTYPE
++ *
++ * @param nWidth    RES Width.
++ * @param nWidth    RES Height.
++ */
++typedef struct OMX_ACT_VARRESTYPE {
++    OMX_U32                 nWidth;
++    OMX_U32                 nHeight;
++    OMX_U32					nMaxFps;
++} OMX_ACT_VARRESTYPE;
++/**
++ * sensor select  types
++ */
++typedef enum OMX_SENSORSELECT{
++	OMX_PrimarySensor = 0,
++	OMX_SecondarySensor,
++	OMX_TI_StereoSensor,
++	OMX_SensorTypeMax = 0x7fffffff
++}OMX_SENSORSELECT;
++
++/**
++ *
++ * Sensor Select
++ */
++typedef  struct OMX_PARAM_SENSORSELECTTYPE {
++	OMX_U32  nSize; /**< Size of the structure in bytes */
++	OMX_VERSIONTYPE nVersion; /**< OMX specification version info */
++	OMX_U32 nPortIndex; /**< Port that this struct applies to */
++	OMX_SENSORSELECT eSensor; /**< sensor select */
++} OMX_PARAM_SENSORSELECTTYPE;
++
++/**
++ * Structure used to configure current OMX_TI_CAPRESTYPE
++ *
++ * STRUCT MEMBERS:
++ * nSize            : Size of the structure in bytes
++ * nVersion         : OMX specification version information
++ * nPortIndex       : Port that this structure applies to
++ * nWidthMin        : Number of the smallest width supported
++ * nHeightMin       : Number of the smallest height supported
++ * nWidthMax        : Number of the biggest width supported
++ * nHeightMax       : Number of the biggest height supported
++ */
++typedef struct OMX_ACT_CAPRESTYPE {
++	OMX_U32         nSize;
++	OMX_VERSIONTYPE nVersion;
++	OMX_U32         nPortIndex;
++	OMX_U32         nWidthMin;  // smallest width supported
++	OMX_U32         nHeightMin; // smallest height supported
++	OMX_U32         nWidthMax;  // biggest width supported
++	OMX_U32         nHeightMax; // biggest height supported
++} OMX_ACT_CAPRESTYPE;
++
++typedef struct OMX_ACT_SUPPORT_LEVEL{
++	OMX_U32         nSize;
++	OMX_VERSIONTYPE nVersion;
++	OMX_U32         nPortIndex;
++	OMX_S32         nMinVal;  // smallest width supported
++	OMX_S32         nMaxVal; // smallest height supported
++	OMX_U32         nStep;
++}OMX_ACT_SUPPORT_LEVEL;
++/**
++ * Structure used to configure current OMX_ACT_CAPTYPE
++ *
++ * STRUCT MEMBERS:
++ * nSize                                : Size of the structure in bytes
++ * nVersion                             : OMX specification version information
++ * nPortIndex                           : Port that this structure applies to
++ * ulPreviewFormatCount                 : Number of the supported preview pixelformat count
++ * ePreviewFormats                      : Array containing the supported preview pixelformat count
++ * ulImageFormatCount                   : Number of the supported image pixelformat count
++ * eImageFormats                        : Array containing the supported image pixelformat count
++ * tPreviewResRange                     : Supported preview resolution range
++ * tImageResRange                       : Supported image resolution range
++ * tThumbResRange                       : Supported thumbnail resolution range
++ * ulWhiteBalanceCount                  : Supported whitebalance mode count
++ * eWhiteBalanceModes                   : Array containing the whitebalance modes
++ * ulColorEffectCount                   : Supported effects count
++ * eColorEffects                        : Array containing the supported effects
++ * xMaxWidthZoom                        : Fixed point value stored as Q16 representing the maximum value for the Zoom allowed on Width
++ * xMaxHeightZoom                       : Fixed point value stored as Q16 representing the maximum value for the Zoom allowed on Height
++ * ulFlickerCount                       : Number of the supported anti-flicker modes
++ * eFlicker                             : Array containing the supported anti-flicker modes
++ * ulExposureModeCount                  : Number of the supported exposure modes
++ * eExposureModes                       : Array containing the supported exposure modes
++ * bLensDistortionCorrectionSupported   : Flag for Lens Distortion Correction Algorithm support
++ * bISONoiseFilterSupported             : Flag for Noise Filter Algorithm support
++ * xEVCompensationMin                   : Fixed point value stored as Q16 representing the EVCompensation minumum allowed value
++ * xEVCompensationMax                   : Fixed point value stored as Q16 representing the EVCompensation maximum allowed value
++ * nSensitivityMax                      : nSensitivityMax = 100 implies maximum supported equal to "ISO 100"
++ * ulFocusModeCount                     : Number of the supported focus modes
++ * eFocusModes                          : Array containing the supported focus modes
++ * ulFlashCount                         : Number of the supported flash modes
++ * eFlashModes                          : Array containing the supported flash modes
++ * bContrastSupported                   : Flag showing if the contrast is supported
++ * bSaturationSupported                 : Flag showing if the saturation is supported
++ * bBrightnessSupported                 : Flag showing if the brightness is supported
++ * bProcessingLevelSupported            : Flag showing if the processing level is supported
++ * ulPrvVarFPSModesCount                : Number of preview FPS modes
++ * tPrvVarFPSModes                      : Preview FPS modes
++ * ulCapVarFPSModesCount                : Number of capture FPS modes
++ * tCapVarFPSModes                      : Capture FPS modes
++ */
++typedef struct OMX_ACT_CAPTYPE {
++	OMX_U32                 nSize;
++	OMX_VERSIONTYPE         nVersion;
++	OMX_U32                 nSensorIndex;
++	OMX_U16                 ulPreviewFormatCount;   // supported preview pixelformat count
++	OMX_COLOR_FORMATTYPE    ePreviewFormats[8];
++	OMX_U16                 ulImageFormatCount;     // supported image pixelformat count
++	OMX_COLOR_FORMATTYPE    eImageFormats[8];
++	OMX_ACT_VARRESTYPE      tPreviewRes[8];       // supported preview resolution range
++	OMX_U16                 ulPreviewResCount;    // supported preview resolution count
++	OMX_ACT_VARRESTYPE      tImageRes[64];         // supported image resolution range
++	OMX_U16                 ulImageResCount;    // supported image resolutio count
++	OMX_ACT_VARRESTYPE      tThumbRes[4];         // supported thumbnail resolution range
++	OMX_U16                 ulThumbResCount;    // supported thumbnail resolution count
++	OMX_U16                 ulWhiteBalanceCount;    // supported whitebalance mode count
++	OMX_WHITEBALCONTROLTYPE eWhiteBalanceModes[16];
++	OMX_U16                 ulColorEffectCount;     // supported effects count
++	OMX_IMAGEFILTERTYPE     eColorEffects[32];
++	OMX_S32                 xMaxWidthZoom;          // Fixed point value stored as Q16
++	OMX_S32                 xMaxHeightZoom;         // Fixed point value stored as Q16
++	OMX_U16                 ulFlickerCount;         // supported anti-flicker mode count
++	OMX_FLICKERREJECTIONTYPE     eFlicker[8];
++	OMX_U16                 ulExposureModeCount;    // supported exposure mode count
++	OMX_EXPOSURECONTROLTYPE eExposureModes[32];
++	OMX_BOOL                bISONoiseFilterSupported;
++	OMX_S32                 xEVCompensationMin;     // Fixed point value stored as Q16
++	OMX_S32                 xEVCompensationMax;     // Fixed point value stored as Q16
++	OMX_U32                 nSensitivityMax;        // nSensitivityMax = 100 implies maximum supported equal to "ISO 100"
++	OMX_U16                 ulFocusModeCount;       // supported focus mode count
++	OMX_IMAGE_FOCUSCONTROLTYPE      eFocusModes[16];
++	OMX_U16                 ulFlashCount;           // supported flash modes count
++	OMX_IMAGE_FLASHCONTROLTYPE      eFlashModes[8];
++	OMX_BOOL                bContrastSupported;
++	OMX_BOOL                bSaturationSupported;
++	OMX_BOOL                bBrightnessSupported;
++	OMX_BOOL                bWhiteBalanceLockSupported;
++	OMX_BOOL                bExposureLockSupported;
++	OMX_BOOL                bFocusLockSupported;
++	OMX_ACT_SUPPORT_LEVEL   xBrightnessLevel;//should be [-n,n] as [ -6:1:6],[0 6] used by OMX_CONFIG_BRIGHTNESSTYPE,[-6<<16,6<<16] used as EV
++	OMX_ACT_SUPPORT_LEVEL   xDeNoiseLevel;//should be [0,n] as [0:1:6]
++	OMX_ACT_SUPPORT_LEVEL   xSaturationLevel;//should be [-n,n] as [ -6:1:6]
++	OMX_ACT_SUPPORT_LEVEL   xContrastLevel;//should be [-n,n] as [ -6:1:6]
++	OMX_U16                 ulPrvVarFPSModesCount;  // supported variable FPS preview modes count
++	OMX_ACT_VARFPSTYPE      tPrvVarFPSModes[10];
++	OMX_U16                 ulCapVarFPSModesCount;  // supported variable FPS capture modes count
++	OMX_ACT_VARFPSTYPE      tCapVarFPSModes[10];
++	OMX_U16                 ulAreasFocusCount;    // supported number of AlgoAreas for focus areas
++ } OMX_ACT_CAPTYPE;
++
++
++
++/**
++ * Defines 3A Region priority mode.
++ *
++ * STRUCT MEMBERS:
++ *  nSize               : Size of the structure in bytes
++ *  nVersion            : OMX specification version information
++ *  nPortIndex          : Port that this structure applies to
++ *  bAwbFaceEnable      : Enable Region priority for Auto White Balance
++ *  bAeFaceEnable       : Enable Region priority for Auto Exposure
++ *  bAfFaceEnable       : Enable Region priority for Auto Focus
++ */
++typedef struct OMX_ACT_CONFIG_3A_REGION_PRIORITY {
++	OMX_U32 nSize;
++	OMX_VERSIONTYPE nVersion;
++	OMX_U32 nPortIndex;
++	OMX_BOOL bAwbRegionEnable;
++	OMX_BOOL bAeRegionEnable;
++	OMX_BOOL bAfRegionEnable;
++	OMX_CONFIG_RECTTYPE tRect;
++} OMX_ACT_CONFIG_3A_REGION_PRIORITY;
++
++
++/**
++ * The OMX_ACT_BRIGHTNESSCONTRASTCRTLTYPE enumeration is used to define the
++ * brightness and contrast mode types.
++ */
++typedef enum OMX_ACT_BRIGHTNESSCONTRASTCRTLTYPE {
++	OMX_ACT_BceModeOff = 0,
++	OMX_ACT_BceModeOn,
++	OMX_ACT_BceModeAuto,
++	OMX_ACT_BceModeMax = 0x7FFFFFFF
++} OMX_ACT_BRIGHTNESSCONTRASTCRTLTYPE;
++
++/**
++ * Local and global brightness contrast type.
++ *
++ * STRUCT MEMBERS:
++ *  nSize             : Size of the structure in bytes
++ *  nVersion          : OMX specification version information
++ *  nPortIndex        : Port that this structure applies to
++ *  eControl          : Control field for GLBCE
++ */
++typedef struct OMX_ACT_CONFIG_BLITCOMPENSATIONTYPE {
++	OMX_U32 nSize;
++	OMX_VERSIONTYPE nVersion;
++	OMX_U32 nPortIndex;
++	OMX_ACT_BRIGHTNESSCONTRASTCRTLTYPE eControl;
++} OMX_ACT_CONFIG_BLITCOMPENSATIONTYPE;
++
++
++/**
++ * Focus distance configuration
++ *
++ *  STRUCT MEMBERS:
++ *  nSize: Size of the structure in bytes
++ *  nVersion: OMX specification version information
++ *  nPortIndex: Port that this structure applies to
++ *  nFocusDistanceNear : Specifies the near focus distance in mm ( 0 equals infinity )
++ *  nFocusDistanceOptimal : Specifies the optimal focus distance in mm ( 0 equals infinity )
++ *  nFocusDistanceFar : Specifies the far focus distance in mm ( 0 equals infinity )
++ *  nLensPosition : Specifies the current lens position in driver units
++ */
++typedef struct OMX_ACT_CONFIG_FOCUSDISTANCETYPE {
++    OMX_U32 nSize;
++    OMX_VERSIONTYPE nVersion;
++    OMX_U32 nPortIndex;
++    OMX_U32 nFocusDistanceNear;
++    OMX_U32 nFocusDistanceOptimal;
++    OMX_U32 nFocusDistanceFar;
++    OMX_S32 nLensPosition;
++} OMX_ACT_CONFIG_FOCUSDISTANCETYPE;
++
++/**
++ * Function is enabled?
++ *
++ * */
++typedef struct StoreMetaDataInBuffersParams {
++    OMX_U32 nSize;
++    OMX_VERSIONTYPE nVersion;
++    OMX_U32 nPortIndex;
++    OMX_BOOL bStoreMetaData;
++}StoreMetaDataInBuffersParams;
++
++/**
++ * Function is enabled?
++ *
++ * */
++typedef struct OMX_ACTIONS_Params {
++    OMX_U32 nSize;
++    OMX_VERSIONTYPE nVersion;
++    OMX_U32 nPortIndex;
++    OMX_BOOL bEnable;
++}OMX_ACTIONS_Params;
++
++/**
++ * The information of a face from camera face detection.
++ */
++typedef struct omx_camera_face {
++    /**
++     * Bounds of the face [left, top, right, bottom]. (-1000, -1000) represents
++     * the top-left of the camera field of view, and (1000, 1000) represents the
++     * bottom-right of the field of view. The width and height cannot be 0 or
++     * negative. This is supported by both hardware and software face detection.
++     *
++     * The direction is relative to the sensor orientation, that is, what the
++     * sensor sees. The direction is not affected by the rotation or mirroring
++     * of CAMERA_CMD_SET_DISPLAY_ORIENTATION.
++     */
++	OMX_S32 rect[4];
++
++    /**
++     * The confidence level of the face. The range is 1 to 100. 100 is the
++     * highest confidence. This is supported by both hardware and software
++     * face detection.
++     */
++	OMX_S32 score;
++
++    /**
++     * An unique id per face while the face is visible to the tracker. If
++     * the face leaves the field-of-view and comes back, it will get a new
++     * id. If the value is 0, id is not supported.
++     */
++	OMX_S32 id;
++
++    /**
++     * The coordinates of the center of the left eye. The range is -1000 to
++     * 1000. -2000, -2000 if this is not supported.
++     */
++	OMX_S32 left_eye[2];
++
++    /**
++     * The coordinates of the center of the right eye. The range is -1000 to
++     * 1000. -2000, -2000 if this is not supported.
++     */
++	OMX_S32 right_eye[2];
++
++    /**
++     * The coordinates of the center of the mouth. The range is -1000 to 1000.
++     * -2000, -2000 if this is not supported.
++     */
++	OMX_S32 mouth[2];
++
++} omx_camera_face_t;
++
++/**
++ * The metadata of the frame data.
++ */
++typedef struct omx_camera_frame_metadata {
++	OMX_U32 nSize;
++	OMX_VERSIONTYPE nVersion;
++	OMX_U32 nPortIndex;
++    /**
++     * The number of detected faces in the frame.
++     */
++	OMX_S32 number_of_faces;
++
++    /**
++     * An array of the detected faces. The length is number_of_faces.
++     */
++    omx_camera_face_t *faces;
++} omx_camera_frame_metadata_t;
++
++
++//*
++typedef enum OMX_TSPACKET_TYPE {
++	OMX_TsPacket_Disable,
++	OMX_TsPacket_NoBlu,
++	OMX_TsPacket_WithBlu,
++} OMX_TSPACKET_TYPE;
++
++//*
++typedef struct OMX_ACT_PARAM_TsPacketType{
++	OMX_U32 nSize;
++	OMX_VERSIONTYPE nVersion;
++	OMX_U32 nPortIndex;
++	OMX_TSPACKET_TYPE TsPacketType;
++}OMX_ACT_PARAM_TsPacketType;
++
++//*
++typedef struct OMX_ACT_PARAM_FaceDetType{
++	OMX_U32 nSize;
++	OMX_VERSIONTYPE nVersion;
++	OMX_U32 nPortIndex;
++	OMX_U32 nAngle;
++	OMX_BOOL isFrontCamera;
++}OMX_ACT_PARAM_FaceDetType;
++
++typedef struct OMX_ACT_BlendImageType{
++	OMX_U32 nSize;
++	OMX_VERSIONTYPE nVersion;
++	OMX_U32 nPortIndex;
++	OMX_COLOR_FORMATTYPE eColorFormat;
++}OMX_ACT_BlendImageType;
++
++
++typedef struct OMX_ACT_PARAM_EXIFPARAM{
++	OMX_U32 nSize;
++	OMX_VERSIONTYPE nVersion;
++	OMX_U32 nPortIndex;
++	OMX_BOOL bExifEnable;				
++	OMX_U32 ImageOri;// 图像的方向，默认为0
++	OMX_BOOL bGPS;// GPS 信息是否含有，-1表示无GPS信息
++	char *dataTime;// 拍照日期
++	char *exifmake;// make and model
++	char *exifmodel;
++	OMX_U32  focalLengthL;// 焦距
++	OMX_U32  focalLengthH;
++	OMX_U32  gpsLATL[3];// 纬度与径度
++	OMX_U32  gpsLATH[3];
++	OMX_U32  gpsLONGL[3];
++	OMX_U32  gpsLONGH[3];
++	char *gpsprocessMethod;
++	OMX_U32  gpsTimeL[3];
++	OMX_U32  gpsTimeH[3];
++	char *gpsDate;
++	void *extendPtr;
++	OMX_U32  gpsALTIL[1];
++	OMX_U32  gpsALTIH[1];
++	OMX_U32  gpsLATREF;//N:0 S:1
++	OMX_U32  gpsLONGREF;//E:0 W:1
++	OMX_U32  gpsALTIREF;//Sea level:0
++}OMX_ACT_PARAM_EXIFPARAM;
++				
++typedef struct OMX_ACT_PARAM_THUMBPARAM{
++	OMX_U32 nSize;
++	OMX_VERSIONTYPE nVersion;
++	OMX_U32 nPortIndex;
++	OMX_U32 nWidth;
++	OMX_U32 nHeight;
++	OMX_BOOL bThumbEnable;
++}OMX_ACT_PARAM_THUMBPARAM;
++				
++typedef struct OMX_ACT_CONFIG_VIDEOPARAM{
++	OMX_U32 nSize;
++	OMX_VERSIONTYPE nVersion;
++	OMX_U32 nPortIndex;
++	OMX_U32 nWidth;
++	OMX_U32 nHeight;
++	OMX_U32 nFramerate;
++}OMX_ACT_CONFIG_VIDEOPARAM;
++
++
++/////add for extern enum
++typedef enum OMX_ACT_IMAGEFILTERTYPE {
++	OMX_ImageFilterACTBW = 0x7F000001,
++	OMX_ImageFilterACTSEPIA,
++	OMX_ImageFilterACTSKY_BLUE,
++	OMX_ImageFilterACTGRASS_GREEN,
++	OMX_ImageFilterACTSKIN_WHITEN,
++	OMX_ImageFilterACTVIVID,
++}OMX_ACT_IMAGEFILTERTYPE;
++
++typedef enum OMX_ACT_EXPOSURECONTROLTYPE {
++	OMX_ExposureControlActHouse = 0x7F000001,
++	OMX_ExposureControlActSunset,
++	OMX_ExposureControlActAction,
++	OMX_ExposureControlActPortrait,
++	OMX_ExposureControlActLandscape,
++	OMX_ExposureControlActNight_Portrait,
++	OMX_ExposureControlActTheatre,
++	OMX_ExposureControlActStreadyPhoto,
++	OMX_ExposureControlActFireworks,
++	OMX_ExposureControlActParty,
++	OMX_ExposureControlActCandlelight,
++	OMX_ExposureControlActBarcode,
++	OMX_ExposureControlActHDR,
++} OMX_ACT_EXPOSURECONTROLTYPE;
++
++
++typedef enum OMX_ACT_IMAGE_FOCUSCONTROLTYPE {
++    OMX_IMAGE_FocusControlSingle = 0x7F000001,
++		OMX_IMAGE_FocusControlMacro,
++		OMX_IMAGE_FocusControlFACE,
++} OMX_ACT_IMAGE_FOCUSCONTROLTYPE;
++
++
++typedef struct OMX_ACT_CONFIG_AGCVALUE {
++    OMX_U32 nSize;
++    OMX_VERSIONTYPE nVersion;
++    OMX_U32 nPortIndex;
++    OMX_U32 nGain;         /**< e.g. 0 not Support,Q8 " */
++} OMX_ACT_CONFIG_AGCVALUE;
++
++typedef struct OMX_ACT_CONFIG_FlashStrobeParams {
++    OMX_U32 nSize;
++    OMX_VERSIONTYPE nVersion;
++    OMX_U32 nPortIndex;
++    OMX_BOOL bStrobeOn;
++    OMX_U32  nElapsedTime;
++} OMX_ACT_CONFIG_FlashStrobeParams;
++
++
++#ifdef __cplusplus
++}
++#endif /* __cplusplus */
++
++#endif
++
++
+diff --git a/include/media/openmax/ACT_OMX_Index.h b/include/media/openmax/ACT_OMX_Index.h
+new file mode 100755
+index 0000000..24c716f
+--- /dev/null
++++ b/include/media/openmax/ACT_OMX_Index.h
+@@ -0,0 +1,61 @@
++#ifndef _OMX_ACT_INDEX_H_
++#define _OMX_ACT_INDEX_H_
++
++#ifdef __cplusplus
++extern "C" {
++#endif /* __cplusplus */
++
++/******************************************************************
++ *   INCLUDE FILES
++ ******************************************************************/
++#include <OMX_Types.h>
++
++/*******************************************************************
++ * EXTERNAL REFERENCE NOTE: only use if not found in header file
++ *******************************************************************/
++/*----------         function prototypes      ------------------- */
++/*----------         data declarations        ------------------- */
++/*******************************************************************
++ * PUBLIC DECLARATIONS: defined here, used elsewhere
++ *******************************************************************/
++/*----------         function prototypes      ------------------- */
++/*----------         data declarations        ------------------- */
++
++typedef enum OMX_ACT_INDEXTYPE {
++	/* Vendor specific area for storing indices */
++    /* Camera Indices */
++    OMX_ACT_IndexParamSensorSelect = ((OMX_INDEXTYPE)OMX_IndexVendorStartUnused + 100),   /**< reference: OMX_PARAM_SENSORSELECTTYPE */
++    OMX_ACT_IndexConfigImageDeNoiseLevel,           /**< reference: OMX_IMAGE_CONFIG_PROCESSINGLEVELTYPE */
++    OMX_ACT_IndexConfigCamCapabilities,          /**< reference: OMX_ACT_CAPTYPE */
++    OMX_ACT_IndexConfigGlobalBlitCompensation, /**< reference: OMX_ACT_CONFIG_BLITCOMPENSATIONTYPE */
++    OMX_ACT_IndexConfigFocusDistance,              /**< reference: OMX_ACT_CONFIG_FOCUSDISTANCETYPE */
++    OMX_ACT_IndexConfig_FACEDETECTION,           /**< reference: OMX_ACTIONS_Params */
++    OMX_ACT_IndexParamMVCTYPE,           /**< reference: OMX_ACTIONS_Params */
++    OMX_IndexParameterStoreMediaData,           /**< reference: StoreMetaDataInBuffersParams */
++    OMX_IndexParameterBlendImageType, /**< reference: OMX_ACT_BlendImageType */
++    OMX_ACT_IndexParamThumbControl, /**< reference: OMX_ACT_PARAM_THUMBPARAM */
++    OMX_ACT_IndexParamExifControl, /**< reference: OMX_ACT_PARAM_EXIFPARAM */
++	OMX_ACT_IndexConfigVideoParam,/**< reference: OMX_ACT_CONFIG_VIDEOPARAM */
++	OMX_ACT_IndexParmaTsPacket,/**< reference: OMX_ACT_PARAM_TsPacketType */
++	OMX_ACT_IndexParmaFaceDet,/**< reference: OMX_ACT_PARAM_FaceDetType */
++		OMX_ACT_IndexConfigAGCExposureValue,/**< reference: OMX_ACT_CONFIG_AGCVALUE */
++		OMX_ACT_IndexConfigFlashStrobeValue,/**< reference: OMX_ACT_CONFIG_FlashStrobeParams */
++	/*---for videodeocder---*/
++	OMX_IndexStreamBufferUnused = ((OMX_INDEXTYPE)OMX_IndexVendorStartUnused + 1000),
++	OMX_IndexParamStreamBufferMode,
++	OMX_IndexThumbnail,
++	OMX_IndexMinUndequeueBuffer,
++	OMX_IndexVideoDecInit,
++	OMX_GoogleAndroidIndexEnableAndroidNativeBuffers,
++	OMX_GoogleAndroidIndexUseAndroidNativeBuffer,
++	OMX_GoogleAndroidIndexUseAndroidNativeBuffer2,
++	OMX_GoogleAndroidIndexGetAndroidNativeBufferUsage,
++} OMX_TI_INDEXTYPE;
++
++
++#ifdef __cplusplus
++}
++#endif /* __cplusplus */
++
++#endif /* _OMX_ACT_INDEX_H_ */
++
+diff --git a/include/media/openmax/OMX_Core.h b/include/media/openmax/OMX_Core.h
+index 9fb0f6f..d6e2772 100644
+--- a/include/media/openmax/OMX_Core.h
++++ b/include/media/openmax/OMX_Core.h
+@@ -267,6 +267,8 @@ typedef enum OMX_ERRORTYPE
+ 
+   /** Tunneling is unsupported by the component*/
+   OMX_ErrorTunnelingUnsupported = (OMX_S32) 0x80001024,
++  
++  OMX_ErrorallocateBuffersFailed = (OMX_S32) 0x80001025,
+ 
+   OMX_ErrorKhronosExtensions = (OMX_S32)0x8F000000, /**< Reserved region for introducing Khronos Standard Extensions */ 
+   OMX_ErrorVendorStartUnused = (OMX_S32)0x90000000, /**< Reserved region for introducing Vendor Extensions */
+diff --git a/include/media/openmax/OMX_RoleNames.h b/include/media/openmax/OMX_RoleNames.h
+new file mode 100755
+index 0000000..3e2d74f
+--- /dev/null
++++ b/include/media/openmax/OMX_RoleNames.h
+@@ -0,0 +1,141 @@
++/*
++ * Copyright (c) 2011 The Khronos Group Inc. 
++ * 
++ * Permission is hereby granted, free of charge, to any person obtaining
++ * a copy of this software and associated documentation files (the
++ * "Software"), to deal in the Software without restriction, including
++ * without limitation the rights to use, copy, modify, merge, publish,
++ * distribute, sublicense, and/or sell copies of the Software, and to
++ * permit persons to whom the Software is furnished to do so, subject
++ * to the following conditions: 
++ * The above copyright notice and this permission notice shall be included
++ * in all copies or substantial portions of the Software. 
++ * 
++ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
++ * OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
++ * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
++ * IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY
++ * CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT,
++ * TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE
++ * SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE. 
++ *
++ */
++
++/*
++ *  OMX_RoleNames.h - OpenMax IL version 1.2.0
++ *  The OMX_RoleNames header file contains the standard role names as defined
++ *  strings.
++ */
++
++#ifndef OMX_RoleNames_h
++#define OMX_RoleNames_h
++
++#ifdef __cplusplus
++extern "C" {
++#endif /* __cplusplus */
++
++/* Audio decoder class */
++#define OMX_ROLE_AUDIO_DECODER_AAC      "audio_decoder.aac"
++#define OMX_ROLE_AUDIO_DECODER_AMRNB    "audio_decoder.amrnb"
++#define OMX_ROLE_AUDIO_DECODER_AMRWB    "audio_decoder.amrwb"
++#define OMX_ROLS_AUDIO_DEXODER_AMRPLUS  "audio_decoder.amrwb+"
++#define OMX_ROLE_AUDIO_DECODER_MP3      "audio_decoder.mp3"
++#define OMX_ROLE_AUDIO_DECODER_RA       "audio_decoder.ra"
++#define OMX_ROLE_AUDIO_DECODER_WMA      "audio_decoder.wma"
++
++/* Audio encoder class */
++#define OMX_ROLE_AUDIO_ENCODER_AAC      "audio_encoder.aac"
++#define OMX_ROLE_AUDIO_ENCODER_AMRNB    "audio_encoder.amrnb"
++#define OMX_ROLE_AUDIO_ENCODER_AMRWB    "audio_encoder.amrwb"
++#define OMX_ROLS_AUDIO_ENCODER_AMRPLUS  "audio_encoder.amrwb+"
++#define OMX_ROLE_AUDIO_ENCODER_MP3      "audio_encoder.mp3"
++
++/* Audio mixer class */
++#define OMX_ROLE_AUDIO_MIXER_PCM "audio_mixer.pcm"
++
++/* Audio reader class */
++#define OMX_ROLE_AUDIO_READER_BINARY "audio_reader.binary"
++
++/* Audio renderer class */
++#define OMX_ROLE_AUDIO_RENDERER_PCM "audio_renderer.pcm"
++
++/* Audio writer class */
++#define OMX_ROLE_AUDIO_WRITER_BINARY "audio_writer.binary"
++
++/* Audio capturer class */
++#define OMX_ROLE_AUDIO_CAPTURER_PCM "audio_capturer.pcm"
++
++/* Audio processor class */
++#define OMX_ROLE_AUDIO_PROCESSOR_PCM_STEREO_WIDENING_LOUDSPEAKERS "audio_processor.pcm.stereo_widening_loudspeakers"
++#define OMX_ROLE_AUDIO_PROCESSOR_PCM_STEREO_WIDENING_HEADPHONES   "audio_processor.pcm.stereo_widening_headphones"
++#define OMX_ROLE_AUDIO_PROCESSOR_PCM_REVERBERATION                "audio_processor.pcm.reverberation"
++#define OMX_ROLE_AUDIO_PROCESSOR_PCM_CHORUS                       "audio_processor.pcm.chorus"
++#define OMX_ROLE_AUDIO_PROCESSOR_PCM_EQUALIZER                    "audio_processor.pcm.equalizer"
++
++/* 3D audio mixer class */
++#define OMX_ROLE_AUDIO_3D_MIXER_PCM_HEADPHONES   "audio_3D_mixer.pcm.headphones"
++#define OMX_ROLE_AUDIO_3D_MIXER_PCM_LOUDSPEAKERS "audio_3D_mixer.pcm.loudspeakers"
++
++/* Image decoder class */
++#define OMX_ROLE_IMAGE_DECODER_JPEG "image_decoder.JPEG"
++
++/* Image encoder class */
++#define OMX_ROLE_IMAGE_ENCODER_JPEG "image_encoder.JPEG"
++
++/* Image reader class */
++#define OMX_ROLE_IMAGE_READER_BINARY "image_reader.binary"
++
++/* Image writer class */
++#define OMX_ROLE_IMAGE_WRITER_BINARY "image_writer.binary"
++
++/* Video decoder class */
++#define OMX_ROLE_VIDEO_DECODER_H263  "video_decoder.h263"
++#define OMX_ROLE_VIDEO_DECODER_AVC   "video_decoder.avc"
++#define OMX_ROLE_VIDEO_DECODER_MPEG4 "video_decoder.mpeg4"
++#define OMX_ROLE_VIDEO_DECODER_RV    "video_decoder.rv"
++#define OMX_ROLE_VIDEO_DECODER_WMV   "video_decoder.wmv"
++#define OMX_ROLE_VIDEO_DECODER_VC1   "video_decoder.vc1"
++
++/* Video encoder class */
++#define OMX_ROLE_VIDEO_ENCODER_H263  "video_encoder.h263"
++#define OMX_ROLE_VIDEO_ENCODER_AVC   "video_encoder.avc"
++#define OMX_ROLE_VIDEO_ENCODER_MPEG4 "video_encoder.mpeg4"
++
++/* Video reader class */
++#define OMX_ROLE_VIDEO_READER_BINARY "video_reader.binary"
++
++/* Video scheduler class */
++#define OMX_ROLE_VIDEO_SCHEDULER_BINARY "video_scheduler.binary"
++
++/* Video writer class */
++#define OMX_ROLE_VIDEO_WRITER_BINARY "video_writer.binary"
++
++/* Camera class */
++#define OMX_ROLE_CAMERA_YUV "camera.yuv"
++
++/* Clock class */
++#define OMX_ROLE_CLOCK_BINARY "clock.binary"
++
++/* Container demuxer class */
++#define OMX_ROLE_CONTAINER_DEMUXER_3GP  "container_demuxer_3gp"
++#define OMX_ROLE_CONTAINER_DEMUXER_ASF  "container_demuxer_asf"
++#define OMX_ROLE_CONTAINER_DEMUXER_REAL "container_demuxer_real"
++
++/* Container muxer class */
++#define OMX_ROLE_CONTAINER_MUXER_3GP  "container_muxer_3gp"
++
++/* Image/video processor class */
++#define OMX_ROLE_IV_PROCESSOR_YUV "iv_processor.yuv"
++
++/* Image/video rendered class */
++#define OMX_ROLE_IV_RENDERER_YUV_OVERLAY "iv_renderer.yuv.overlay"
++#define OMX_ROLE_IV_RENDERER_YUV_BLTER   "iv_renderer.yuv.blter"
++#define OMX_ROLE_IV_RENDERER_RGB_OVERLAY "iv_renderer.rgb.overlay"
++#define OMX_ROLE_IV_RENDERER_RGB_BLTER   "iv_renderer.rgb.blter"
++
++#ifdef __cplusplus
++}
++#endif /* __cplusplus */
++
++#endif
++/* File EOF */
+diff --git a/include/media/openmax/video_mediadata.h b/include/media/openmax/video_mediadata.h
+new file mode 100755
+index 0000000..4429b79
+--- /dev/null
++++ b/include/media/openmax/video_mediadata.h
+@@ -0,0 +1,40 @@
++#ifndef __VIDEO_MEDIADATA_H__
++#define __VIDEO_MEDIADATA_H__
++
++#define kMetadataBufferTypeCameraSource_act 0x0//same as camerasource from android
++#define kMetadataBufferTypeImageBackground_act 0x100
++
++typedef struct vce_private{
++	int noffset;
++	int nfilledlen;
++}vce_private;
++
++typedef struct {
++    int metadataBufferType;
++    void* handle;
++    int off_x;
++    int off_y;
++    int crop_w;
++    int crop_h;
++    int nAlpha;
++	vce_private vce_attribute;
++}video_metadata_t;
++
++
++typedef struct{
++	unsigned int nativehanle[3];
++	int ion_share_fd;//ION share Fd for MMAP VirAddr
++	/*
++		ptrVir = mmap(NULL, length, PROT_READ | PROT_WRITE, MAP_SHARED, ion_share_fd, 0);
++	*/
++	int     magic;
++	int     flags;
++	int     size;
++	int     offset;
++
++	unsigned int revoffset[7];
++	int phys_addr;
++	int ion_handle_t;//unuse here
++}video_handle_t;
++#endif
++
+diff --git a/include/ui/FramebufferNativeWindow.h b/include/ui/FramebufferNativeWindow.h
+index 02f3c8b..7597105 100644
+--- a/include/ui/FramebufferNativeWindow.h
++++ b/include/ui/FramebufferNativeWindow.h
+@@ -68,6 +68,9 @@ public:
+ 
+     // for debugging only
+     int getCurrentBufferIndex() const;
++    
++    //for gpu autotest
++    ANativeWindowBuffer* getCurrentBufferAddress();
+ 
+ private:
+     friend class LightRefBase<FramebufferNativeWindow>;    
+diff --git a/libs/ui/FramebufferNativeWindow.cpp b/libs/ui/FramebufferNativeWindow.cpp
+index 7ff6618..6159f1b 100644
+--- a/libs/ui/FramebufferNativeWindow.cpp
++++ b/libs/ui/FramebufferNativeWindow.cpp
+@@ -72,6 +72,13 @@ private:
+  * 
+  */
+ 
++ANativeWindowBuffer* FramebufferNativeWindow::getCurrentBufferAddress()
++{
++       ANativeWindowBuffer* buf;               
++       buf = buffers[mCurrentBufferIndex].get();       
++       return buf;
++}
++
+ FramebufferNativeWindow::FramebufferNativeWindow() 
+     : BASE(), fbDev(0), grDev(0), mUpdateOnDemand(false)
+ {
+diff --git a/opengl/libs/EGL/eglApi.cpp b/opengl/libs/EGL/eglApi.cpp
+index ed1b472..a7a9a39 100644
+--- a/opengl/libs/EGL/eglApi.cpp
++++ b/opengl/libs/EGL/eglApi.cpp
+@@ -295,7 +295,7 @@ EGLSurface eglCreateWindowSurface(  EGLDisplay dpy, EGLConfig config,
+         if (native_window_api_connect(window, NATIVE_WINDOW_API_EGL) != OK) {
+             ALOGE("EGLNativeWindowType %p already connected to another API",
+                     window);
+-            return setError(EGL_BAD_NATIVE_WINDOW, EGL_NO_SURFACE);
++            return setError(EGL_BAD_ALLOC, EGL_NO_SURFACE);
+         }
+ 
+         // set the native window's buffers format to match this config
+diff --git a/services/surfaceflinger/Android.mk b/services/surfaceflinger/Android.mk
+index b3fa5fb..31c877e 100644
+--- a/services/surfaceflinger/Android.mk
++++ b/services/surfaceflinger/Android.mk
+@@ -52,7 +52,8 @@ LOCAL_SHARED_LIBRARIES := \
+ 	libGLESv1_CM \
+ 	libbinder \
+ 	libui \
+-	libgui
++	libgui \
++        libsync
+ 
+ ifeq ($(BOARD_USES_SAMSUNG_HDMI),true)
+         LOCAL_CFLAGS += -DSAMSUNG_HDMI_SUPPORT
+@@ -61,6 +62,8 @@ ifeq ($(BOARD_USES_SAMSUNG_HDMI),true)
+         LOCAL_C_INCLUDES += hardware/samsung/$(TARGET_BOARD_PLATFORM)/include
+ endif
+ 
++LOCAL_C_INCLUDES += $(TOP)/device/actions/gs702a/include
++
+ 
+ LOCAL_MODULE:= libsurfaceflinger
+ 
+diff --git a/services/surfaceflinger/DisplayDevice.cpp b/services/surfaceflinger/DisplayDevice.cpp
+index a6b51a9..b6b6ad1 100644
+--- a/services/surfaceflinger/DisplayDevice.cpp
++++ b/services/surfaceflinger/DisplayDevice.cpp
+@@ -226,7 +226,8 @@ void DisplayDevice::swapBuffers(HWComposer& hwc) const {
+         // TODO: HWC 1.2 will allow virtual displays
+         if (mType >= DisplayDevice::DISPLAY_VIRTUAL) {
+             // always call eglSwapBuffers() for virtual displays
+-            success = eglSwapBuffers(mDisplay, mSurface);
++            // for virtual displays, we swap buffer later
++            //success = eglSwapBuffers(mDisplay, mSurface);
+         } else if (hwc.supportsFramebufferTarget()) {
+             // as of hwc 1.1 we always call eglSwapBuffers if we have some
+             // GLES layers
+diff --git a/services/surfaceflinger/DisplayDevice.h b/services/surfaceflinger/DisplayDevice.h
+index d6da422..70999e5 100644
+--- a/services/surfaceflinger/DisplayDevice.h
++++ b/services/surfaceflinger/DisplayDevice.h
+@@ -147,6 +147,8 @@ public:
+     uint32_t getPageFlipCount() const;
+     void dump(String8& result, char* buffer, size_t SIZE) const;
+ 
++    ANativeWindow * getNativeWindow()const      { return mNativeWindow.get(); }
++
+ private:
+     void init(EGLConfig config);
+ 
+diff --git a/services/surfaceflinger/DisplayHardware/HWComposer.cpp b/services/surfaceflinger/DisplayHardware/HWComposer.cpp
+index 9b4f2ab..78b95d9 100644
+--- a/services/surfaceflinger/DisplayHardware/HWComposer.cpp
++++ b/services/surfaceflinger/DisplayHardware/HWComposer.cpp
+@@ -46,6 +46,8 @@
+ #include "SurfaceFlinger.h"
+ #include <utils/CallStack.h>
+ 
++#include <hardware/gralloc_priv.h>
++
+ namespace android {
+ 
+ // ---------------------------------------------------------------------------
+@@ -237,8 +239,8 @@ HWComposer::HWComposer(
+         // close FB HAL if we don't needed it.
+         // FIXME: this is temporary until we're not forced to open FB HAL
+         // before HWC.
+-        framebuffer_close(mFbDev);
+-        mFbDev = NULL;
++        //framebuffer_close(mFbDev);
++        //mFbDev = NULL;
+     }
+ 
+     // If we have no HWC, or a pre-1.1 HWC, an FB dev is mandatory.
+@@ -281,7 +283,8 @@ HWComposer::HWComposer(
+         }
+ 
+         // don't need a vsync thread if we have a hardware composer
+-        needVSyncThread = false;
++        // ATM7029 requires a vsync thread
++        needVSyncThread = true;
+         // always turn vsync off when we start
+         if (hwcHasVsyncEvent(mHwc)) {
+             eventControl(HWC_DISPLAY_PRIMARY, HWC_EVENT_VSYNC, 0);
+@@ -903,14 +906,156 @@ bool HWComposer::supportsFramebufferTarget() const {
+ 
+ int HWComposer::fbPost(int32_t id,
+         const sp<Fence>& acquireFence, const sp<GraphicBuffer>& buffer) {
+-    if (mHwc && hwcHasApiVersion(mHwc, HWC_DEVICE_API_VERSION_1_1)) {
+-        return setFramebufferTarget(id, acquireFence, buffer);
++    int err = 0;
++    const bool isGlesComposition = hasGlesComposition(id);
++            
++    if (mHwc && hwcHasApiVersion(mHwc, HWC_DEVICE_API_VERSION_1_1) ) {
++          if(isGlesComposition){
++                if (acquireFence != NULL) {
++            acquireFence->waitForever(1000, "HWComposer::fbPost");
++                }
++                if(mHwc && mHwc->fbPrePost){
++                                        err = mHwc->fbPrePost(mHwc,buffer->handle);
++                                        if (err) {
++                                               ALOGE("mHwc  fbPrePost failed  (%s)", strerror(-err));
++                                               return err;
++                                        }
++                                  }
++                mFbDev->post(mFbDev, buffer->handle);
++          }
++        err = setFramebufferTarget(id, acquireFence, buffer);
+     } else {
+         if (acquireFence != NULL) {
+             acquireFence->waitForever(1000, "HWComposer::fbPost");
+         }
+-        return mFbDev->post(mFbDev, buffer->handle);
+-    }
++        if(mHwc && mHwc->fbPrePost){
++                                err = mHwc->fbPrePost(mHwc,buffer->handle);
++                                if (err) {
++                                       ALOGE("mHwc  fbPrePost failed  (%s)", strerror(-err));
++                                       return err;
++                                }
++                          }
++        err = mFbDev->post(mFbDev, buffer->handle);
++    }
++        
++        if(mHwc && id == HWC_DISPLAY_PRIMARY)
++        {
++                sp<const DisplayDevice> primary_hw(mFlinger->getDefaultDisplayDevice());
++                if(primary_hw == 0)
++                        return -EINVAL;
++                hwc_rect_t sRect, sCrop;
++                private_handle_t *  handle;
++                handle = (private_handle_t*)(buffer->handle);
++                
++                int srcOri;
++                switch(primary_hw->getOrientation())
++                {
++                        case 1:
++                                srcOri = HAL_TRANSFORM_ROT_90; 
++                                sRect.left = sRect.top = 0;
++                                sRect.right = handle->height;
++                                sRect.bottom = handle->width;
++                                break;
++                        case 2:
++                                srcOri = HAL_TRANSFORM_ROT_180;
++                                sRect.left = sRect.top = 0;
++                                sRect.right = handle->width;
++                                sRect.bottom = handle->height;
++                                break;
++                        case 3:
++                                srcOri = HAL_TRANSFORM_ROT_270;
++                                sRect.left = sRect.top = 0;
++                                sRect.right = handle->height;
++                                sRect.bottom = handle->width;
++                                break;
++                        case 0:
++                        default:
++                                srcOri = 0;
++                                sRect.left = sRect.top = 0;
++                                sRect.right = handle->width;
++                                sRect.bottom = handle->height;
++                                break;
++                }
++                sCrop.left = sCrop.top = 0;
++                sCrop.right = handle->width;
++                sCrop.bottom = handle->height;
++                
++                for(int dpy = 0; dpy < (mFlinger->getDisplays().size()); dpy++)
++                {
++                        sp<DisplayDevice> hw((mFlinger->getDisplays())[dpy]);
++                        int32_t type = hw->getDisplayType();
++                        if(type >= DisplayDevice::DISPLAY_VIRTUAL)
++                        {
++                                ANativeWindow * window = hw->getNativeWindow();
++                                int fenceFd = -1;       
++                                ANativeWindowBuffer * vBuffer = NULL;
++                                int rel = window->dequeueBuffer(window, &vBuffer, &fenceFd);
++                                if (rel < 0)
++                                {
++                                        ALOGE("%s(%d): Dequeue native buffer failed", __FUNCTION__, __LINE__);
++                                        continue;
++                                }                       
++                                if (fenceFd != -1)
++                                {
++                                        rel = sync_wait(fenceFd, 2000);                 
++                                        if (rel < 0 && errno == ETIME)
++                                        {
++                                                ALOGW("Wait for fence fd=%d timeout", fenceFd);                 
++                                                // Wait for ever. 
++                                                rel = sync_wait(fenceFd, -1);
++                                        }                       
++                                        close(fenceFd);
++                                }
++                                
++                                if(vBuffer)
++                                {
++                                        private_handle_t * vhandle;
++                                        vhandle = (private_handle_t*)(vBuffer->handle);
++                                        hwc_rect_t dRect, dCrop;
++                                                                                
++                                        dRect.left = dRect.top = 0;
++                                        dRect.right = vhandle->width;
++                                        dRect.bottom = vhandle->height;
++                                        
++                                        float hscale, vscale, scale;
++                                        int w, h;
++                                        
++                                        hscale = (float)(dRect.right - dRect.left) / (float)(sRect.right - sRect.left);
++                                        vscale = (float)(dRect.bottom - dRect.top) / (float)(sRect.bottom - sRect.top);
++                                        scale = hscale < vscale ? hscale : vscale;
++                                                
++                                        w = (sRect.right - sRect.left) * scale;
++                                        h = (sRect.bottom - sRect.left) * scale;
++                                                
++                                        dCrop.left = (dRect.right - dRect.left - w) / 2;
++                                        dCrop.top = (dRect.bottom - dRect.top - h) / 2;
++                                        dCrop.right = dCrop.left + w;
++                                        dCrop.bottom = dCrop.top + h;                   
++                                        
++                                        if( dCrop.right != vhandle->Crop.right  ||
++                                                dCrop.bottom != vhandle->Crop.bottom||
++                                                dCrop.left != vhandle->Crop.left        ||
++                                                dCrop.top != vhandle->Crop.top) 
++                                        {
++                                                vhandle->Crop.left = dCrop.left;
++                                                vhandle->Crop.top = dCrop.top;
++                                                vhandle->Crop.right = dCrop.right;
++                                                vhandle->Crop.bottom = dCrop.bottom;
++                                                memset((void*)(vhandle->base), 0, vhandle->size);
++                                        }
++                                        
++                                        err = mHwc->stretchBlit(mHwc, vhandle, handle, &dCrop, &sCrop, srcOri); 
++                                        
++                                        window->queueBuffer(window, vBuffer, -1);
++                                }
++                                else
++                                {
++                                        ALOGE("dequeue NULL native buffer");
++                                }
++                        }
++                }
++        }
++        return err;
+ }
+ 
+ int HWComposer::fbCompositionComplete() {
+@@ -1005,9 +1150,19 @@ public:
+             getLayer()->flags &= ~HWC_SKIP_LAYER;
+         }
+     }
++    virtual void setLayerFlags(int flags , bool enable) {
++        if(enable){
++            getLayer()->flags |= flags;
++        }else{
++            getLayer()->flags &= ~flags;
++        }
++    }
+     virtual void setBlending(uint32_t blending) {
+         getLayer()->blending = blending;
+     }
++    virtual void setAlpha(uint32_t alpha) {
++        getLayer()->alpha = alpha;
++    }
+     virtual void setTransform(uint32_t transform) {
+         getLayer()->transform = transform;
+     }
+@@ -1093,9 +1248,19 @@ public:
+             getLayer()->flags &= ~HWC_SKIP_LAYER;
+         }
+     }
++    virtual void setLayerFlags(int flags , bool enable) {
++        if(enable){
++            getLayer()->flags |= flags;
++        }else{
++            getLayer()->flags &= ~flags;
++        }
++    }
+     virtual void setBlending(uint32_t blending) {
+         getLayer()->blending = blending;
+     }
++    virtual void setAlpha(uint32_t alpha) {
++        getLayer()->alpha = alpha;
++    }
+     virtual void setTransform(uint32_t transform) {
+         getLayer()->transform = transform;
+     }
+diff --git a/services/surfaceflinger/DisplayHardware/HWComposer.h b/services/surfaceflinger/DisplayHardware/HWComposer.h
+index 7c67407..ce58c30 100644
+--- a/services/surfaceflinger/DisplayHardware/HWComposer.h
++++ b/services/surfaceflinger/DisplayHardware/HWComposer.h
+@@ -144,7 +144,9 @@ public:
+         virtual void setPerFrameDefaultState() = 0;
+         virtual void setDefaultState() = 0;
+         virtual void setSkip(bool skip) = 0;
++        virtual void setLayerFlags(int flags, bool enable) = 0;
+         virtual void setBlending(uint32_t blending) = 0;
++        virtual void setAlpha(uint32_t alpha) = 0;
+         virtual void setTransform(uint32_t transform) = 0;
+         virtual void setFrame(const Rect& frame) = 0;
+         virtual void setCrop(const Rect& crop) = 0;
+diff --git a/services/surfaceflinger/Layer.cpp b/services/surfaceflinger/Layer.cpp
+index c1561b2..70bd8db 100644
+--- a/services/surfaceflinger/Layer.cpp
++++ b/services/surfaceflinger/Layer.cpp
+@@ -65,7 +65,8 @@ Layer::Layer(SurfaceFlinger* flinger, const sp<Client>& client)
+         mOpaqueLayer(true),
+         mNeedsDithering(false),
+         mSecure(false),
+-        mProtectedByApp(false)
++        mProtectedByApp(false),
++        mLayerFlags(0)
+ {
+     mCurrentCrop.makeInvalid();
+     glGenTextures(1, &mTextureName);
+@@ -135,6 +136,14 @@ void Layer::onRemoved()
+ void Layer::setName(const String8& name) {
+     LayerBase::setName(name);
+     mSurfaceTexture->setName(name);
++  
++    if(strcmp(getName().string(),"com.android.gallery3d/com.android.camera.CameraLauncher") == 0){
++	  	 mLayerFlags = 0x10000;
++	  }else if(strcmp(getName().string(),"com.android.browser/com.android.browser.BrowserActivity") == 0){
++	  	 mLayerFlags = 0x20000;
++	  }else if (strcmp(getName().string(),"SurfaceView") == 0){	  	    	
++	  	 mLayerFlags = 0x40000;
++	  } 
+ }
+ 
+ sp<ISurface> Layer::createSurface()
+@@ -266,10 +275,14 @@ void Layer::setGeometry(
+     // enable this layer
+     layer.setSkip(false);
+ 
+-    // we can't do alpha-fade with the hwc HAL
++    // hwc HAL should determine if it will do alpha-fade
+     const State& s(drawingState());
++    layer.setAlpha(s.alpha);
++
+     if (s.alpha < 0xFF) {
+-        layer.setSkip(true);
++        layer.setBlending(mPremultipliedAlpha ?
++                HWC_BLENDING_PREMULT :
++                HWC_BLENDING_COVERAGE);
+     }
+ 
+     if (isSecure() && !hw->isSecure()) {
+@@ -304,7 +317,9 @@ void Layer::setPerFrameData(const sp<const DisplayDevice>& hw,
+     LayerBaseClient::setPerFrameData(hw, layer);
+     // NOTE: buffer can be NULL if the client never drew into this
+     // layer yet, or if we ran out of memory
+-    layer.setBuffer(mActiveBuffer);
++    layer.setBuffer(mActiveBuffer);    
++    layer.setLayerFlags(mLayerFlags,true);
++    
+ }
+ 
+ void Layer::setAcquireFence(const sp<const DisplayDevice>& hw,
+diff --git a/services/surfaceflinger/Layer.h b/services/surfaceflinger/Layer.h
+index a3d6ab9..fb7fd92 100644
+--- a/services/surfaceflinger/Layer.h
++++ b/services/surfaceflinger/Layer.h
+@@ -148,6 +148,7 @@ private:
+     // page-flip thread (currently main thread)
+     bool mSecure;         // no screenshots
+     bool mProtectedByApp; // application requires protected path to external sink
++    int  mLayerFlags;
+ };
+ 
+ // ---------------------------------------------------------------------------
+diff --git a/services/surfaceflinger/LayerDim.cpp b/services/surfaceflinger/LayerDim.cpp
+index 25caa0a..3ba6b49 100644
+--- a/services/surfaceflinger/LayerDim.cpp
++++ b/services/surfaceflinger/LayerDim.cpp
+@@ -71,6 +71,33 @@ void LayerDim::onDraw(const sp<const DisplayDevice>& hw, const Region& clip) con
+     }
+ }
+ 
++void LayerDim::setGeometry(
++    const sp<const DisplayDevice>& hw,
++        HWComposer::HWCLayerInterface& layer)
++{
++    LayerBaseClient::setGeometry(hw, layer);
++
++    // enable this layer
++    layer.setSkip(false);
++
++    // blending mode
++    layer.setBlending(HWC_BLENDING_DIM);
++
++    // set dim value
++    const State& s(drawingState());
++    layer.setAlpha(s.alpha);
++
++    if (isSecure() && !hw->isSecure()) {
++        layer.setSkip(true);
++    }
++}
++
++void LayerDim::setPerFrameData(const sp<const DisplayDevice>& hw,
++        HWComposer::HWCLayerInterface& layer) {
++    LayerBaseClient::setPerFrameData(hw, layer);
++    // leave it as it is for dim layer.
++}
++
+ // ---------------------------------------------------------------------------
+ 
+ }; // namespace android
+diff --git a/services/surfaceflinger/LayerDim.h b/services/surfaceflinger/LayerDim.h
+index 06f312d..07daa7e 100644
+--- a/services/surfaceflinger/LayerDim.h
++++ b/services/surfaceflinger/LayerDim.h
+@@ -41,6 +41,10 @@ public:
+     virtual bool isProtectedByApp() const { return false; }
+     virtual bool isProtectedByDRM() const { return false; }
+     virtual const char* getTypeId() const { return "LayerDim"; }
++    virtual void setGeometry(const sp<const DisplayDevice>& hw,
++            HWComposer::HWCLayerInterface& layer);
++    virtual void setPerFrameData(const sp<const DisplayDevice>& hw,
++            HWComposer::HWCLayerInterface& layer);
+ };
+ 
+ // ---------------------------------------------------------------------------
+diff --git a/services/surfaceflinger/SurfaceFlinger.cpp b/services/surfaceflinger/SurfaceFlinger.cpp
+index f31bae4..d15575f 100644
+--- a/services/surfaceflinger/SurfaceFlinger.cpp
++++ b/services/surfaceflinger/SurfaceFlinger.cpp
+@@ -1224,6 +1224,10 @@ void SurfaceFlinger::handleTransactionLocked(uint32_t transactionFlags)
+                         sp<DisplayDevice> hw = new DisplayDevice(this,
+                                 state.type, isSecure, display, stc, fbs,
+                                 mEGLConfig);
++                        if (fbs == NULL) {
++                            sp<ANativeWindow> native = stc;
++                            native_window_set_buffers_format(native.get(), PIXEL_FORMAT_BGRA_8888);
++                        }
+                         hw->setLayerStack(state.layerStack);
+                         hw->setProjection(state.orientation,
+                                 state.viewport, state.frame);
+@@ -1651,13 +1655,15 @@ void SurfaceFlinger::doComposeSurfaces(const sp<const DisplayDevice>& hw, const
+             layer->setAcquireFence(hw, *cur);
+         }
+     } else {
+-        // we're not using h/w composer
+-        for (size_t i=0 ; i<count ; ++i) {
+-            const sp<LayerBase>& layer(layers[i]);
+-            const Region clip(dirty.intersect(
+-                    tr.transform(layer->visibleRegion)));
+-            if (!clip.isEmpty()) {
+-                layer->draw(hw, clip);
++        if(hwc.initCheck() || hw->getDisplayType() < DisplayDevice::DISPLAY_VIRTUAL) {
++            // we're not using h/w composer
++            for (size_t i=0 ; i<count ; ++i) {
++                const sp<LayerBase>& layer(layers[i]);
++                const Region clip(dirty.intersect(
++                                tr.transform(layer->visibleRegion)));
++                if (!clip.isEmpty()) {
++                        layer->draw(hw, clip);
++                }
+             }
+         }
+     }
+diff --git a/services/surfaceflinger/SurfaceFlinger.h b/services/surfaceflinger/SurfaceFlinger.h
+index 050d10f..b815333 100644
+--- a/services/surfaceflinger/SurfaceFlinger.h
++++ b/services/surfaceflinger/SurfaceFlinger.h
+@@ -137,6 +137,8 @@ public:
+     // for debugging only
+     // TODO: this should be made accessible only to HWComposer
+     const Vector< sp<LayerBase> >& getLayerSortedByZForHwcDisplay(int disp);
++    
++    const DefaultKeyedVector< wp<IBinder>, sp<DisplayDevice> > & getDisplays() { return mDisplays; }
+ 
+ private:
+     friend class Client;
+-- 
+1.8.1.5
+
